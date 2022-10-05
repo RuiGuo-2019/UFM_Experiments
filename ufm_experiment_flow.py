@@ -74,6 +74,37 @@ class ufm_experiment_flow:
             print("===ERROR: Cannot generate read_%s.tcl!===" % strIterNum)
         os.chdir(self.workdir)
 
+    def resort_conflict_subckt(self, listConflictSubCkt, listSubcktInfo, nSortMode=0): #Resort conflict subckt from small to large, nSortMode = 0-by input 
+        listNewOrderConflictSubCkt = []
+        listNewConflictSubCktInfo = []
+        if(0 == nSortMode):
+            for conflictsubckt in listConflictSubCkt:
+                conflictsubckt = conflictsubckt.strip()
+                conflictsubckt = conflictsubckt.replace('\n','')
+                conflictsubckt = conflictsubckt+'\t'
+                listTemp = [i for i in listSubcktInfo if conflictsubckt in i]
+                if(1 != len(listTemp)):
+                    print('Find more than 1 or no results including %s' % conflictsubckt)
+                else:
+                    if(5 <= listTemp[0].count('\t')):
+                        strTemp = listTemp[0]
+                        strTemp = strTemp.strip('\n')
+                        while(1 < strTemp.count('\t')):
+                            strTemp = strTemp[strTemp.find('\t')+len('\t'):]
+                        nInput = int(strTemp[:strTemp.find('\t')])
+                        nOutput = int(strTemp[strTemp.find('\t')+len('\t'):])    
+                    listTemp.append(nInput)
+                    listTemp.append(nOutput)
+                    listNewConflictSubCktInfo.append(listTemp)
+            
+            listNewConflictSubCktInfo = sorted(listNewConflictSubCktInfo,key = lambda x:x[1], reverse = False)
+        
+        for item in listNewConflictSubCktInfo:
+            listNewOrderConflictSubCkt.append(item[0][:item[0].find('\t')])
+        
+        return listNewOrderConflictSubCkt
+
+
     def modify_top_plx_by_conflict_order(self, strIterNum, intReplacement, listDeleteSubckt = [], nReplaceRegularSubckt = 0):
         strIterOrderFile = os.path.join(self.strDataRoot, 'sub_circuit')
         strIterOrderFile = os.path.join(strIterOrderFile, 'iter'+strIterNum)
@@ -83,7 +114,7 @@ class ufm_experiment_flow:
             strOrder = iof.readline()
         strOrder = strOrder.replace('[','')
         strOrder = strOrder.replace(']','')
-        listOrder = strOrder.split(',')
+        listOriginalOrder = strOrder.split(',')
         listReplaceCircuits = []
 
 
@@ -95,6 +126,8 @@ class ufm_experiment_flow:
             subcktinfo = iif.readlines()
         del(subcktinfo[0])
         del(subcktinfo[0])
+
+        listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=0)
 
         listReplaceOrder = []
         strKey = 'iter'+strIterNum+'_replace'+str(intReplacement)
@@ -825,9 +858,12 @@ class ufm_experiment_flow:
                     continue
 
             if((1 == flagArea) and (1 == flagBegin)):
-                strTemp = line
-                strTemp = strTemp[strTemp.find('    ')+len('    '):]# Time
-                strTemp = strTemp[strTemp.find('    ')+len('    '):strTemp.find('      ')]# Area
+                strTemp = line 
+                strTemp = strTemp.strip('\n')
+                strTemp = strTemp.strip()
+                strTemp = strTemp[strTemp.find(' '):]# Time
+                strTemp = strTemp.strip()
+                strTemp = strTemp[:strTemp.find(' ')]# Area
                 strArea = strTemp
 
 
@@ -1078,9 +1114,15 @@ if __name__ == '__main__':
 
     uef = ufm_experiment_flow(strDataRoot, strRecordFile, strRTL_LUTRoot)
 
+    # ===================================TEST=====================================
     # dclogfile = '/home/UFAD/guor/Codes/MyDemo/Circuit_Partition_Tool_data/intermediate_files_sin_20220927201525/iter0/replace_25/dc_top_obf_log.log'
     # strArea = uef.get_area_from_dc_log_file(dclogfile)
     # strOverhead = '=(' + strArea + '-' + strDefaultArea + ')/' + strDefaultArea
+    # uef.modify_top_plx_by_conflict_order('3', 5, listDeleteSubckt = [], nReplaceRegularSubckt = 0)
+    # strDC_top_obf_log = '/home/UFAD/guor/Codes/MyDemo/Circuit_Partition_Tool_data/intermediate_files_sin_20220927201525/intermediate_files_sin_20221005164310/iter3/replace_5/dc_top_obf_log.log'
+    # strArea = uef.get_area_from_dc_log_file(strDC_top_obf_log)
+    # strOverhead = '=(' + strArea + '-' + strDefaultArea + ')/' + strDefaultArea
+    # ===================================TEST=====================================
 
 
     nTotalCircuitNum = -1
