@@ -16,8 +16,8 @@ class ufm_experiment_flow:
         self.strRecordFile = strRecordFile
         self.strInvalidConflictSubcktFile = os.path.join(os.path.split(self.strRecordFile)[0], 'InvalidConflictSubckt.txt')
         self.workdir = os.getcwd()
-        self.path_abc = os.path.abspath('/home/UFAD/guor/Codes/Python/MyDemo/UFM/abc-master-Sazadur/abc')
-        self.path_sld = os.path.abspath('/home/UFAD/guor/Codes/Python/MyDemo/UFM/FromSazadur/Rui/spramod-host15-logic-encryption-7fdc93c47b0e/bin/sld')
+        self.path_abc = os.path.abspath('/home/UFAD/guor/Codes_old/Python/MyDemo/UFM/abc-master-Sazadur/abc')
+        self.path_sld = os.path.abspath('/home/UFAD/guor/Codes_old/Python/MyDemo/UFM/FromSazadur/Rui/spramod-host15-logic-encryption-7fdc93c47b0e/bin/sld')
         self.path_template_modify_iters_csh = os.path.join(self.workdir, 'modify_iters.csh')
         self.path_template_modify_top_plx = os.path.join(self.workdir, 'modify_top.plx')
         self.path_template_run_compile_dc_tcl = os.path.join(self.workdir, 'run_compile_dc.tcl')
@@ -1369,7 +1369,10 @@ def get_total_circuit_in_iter(iterfolder, nIter):
     return nTotalCircuitNum, nConflictCircuitNum
 
 if __name__ == '__main__':
-    strDataRoot = '/home/UFAD/guor/Codes/MyDemo/Circuit_Partition_Tool_data/sin_20220927111930_ms0_af_7492'
+    strDataRoot = '/home/UFAD/guor/experiment_data/UFM/Circuit_Partition_Tool_data/arbiter_20230104040630_ms0_af_5804'
+    strRTL_LUTRoot = '/home/UFAD/guor/intermediate_data_files/MyDemo/UFM/rtl'
+    if(False == os.path.exists(strRTL_LUTRoot)):
+        os.makedirs(strRTL_LUTRoot)
     strtime = time.strftime("%Y%m%d%H%M%S", time.localtime())
     
 
@@ -1415,11 +1418,11 @@ if __name__ == '__main__':
     strBenchName = os.path.split(strDataRoot)[1]
     strBenchName = strBenchName[:strBenchName.find('_')]
 
-    strRTL_LUTRoot = '/home/UFAD/guor/Codes/MyDemo/Circuit_Partition_Tool_data/rtl'
+    
     
     strRecordFile = os.path.join(strOutputDir,'intermediate_files_'+strBenchName+'_'+strtime)
     strRecordFile = os.path.join(strRecordFile, 'record_'+strtime+'.txt')
-    # strRecordFile = '/home/UFAD/guor/Codes/MyDemo/Circuit_Partition_Tool_data/intermediate_files_'+strBenchName+'_'+strtime+'/record_'+strtime+'.txt'
+    # strRecordFile = '/home/UFAD/guor/Codes_old/MyDemo/Circuit_Partition_Tool_data/intermediate_files_'+strBenchName+'_'+strtime+'/record_'+strtime+'.txt'
     print(strRecordFile)
     strDataRoot = os.path.abspath(os.path.expanduser(strDataRoot))
     strItersRoot = os.path.join(strDataRoot, 'sub_circuit')
@@ -1432,11 +1435,11 @@ if __name__ == '__main__':
     
 
     # ===================================TEST=====================================
-    # dclogfile = '/home/UFAD/guor/Codes/MyDemo/Circuit_Partition_Tool_data/intermediate_files_sin_20220927201525/iter0/replace_25/dc_top_obf_log.log'
+    # dclogfile = '/home/UFAD/guor/Codes_old/MyDemo/Circuit_Partition_Tool_data/intermediate_files_sin_20220927201525/iter0/replace_25/dc_top_obf_log.log'
     # strArea = uef.get_area_from_dc_log_file(dclogfile)
     # strOverhead = '=(' + strArea + '-' + strDefaultArea + ')/' + strDefaultArea
     # uef.modify_top_plx_by_conflict_order('3', 5, listDeleteSubckt = [], nReplaceRegularSubckt = 0)
-    # strDC_top_obf_log = '/home/UFAD/guor/Codes/MyDemo/Circuit_Partition_Tool_data/intermediate_files_sin_20220927201525/intermediate_files_sin_20221005164310/iter3/replace_5/dc_top_obf_log.log'
+    # strDC_top_obf_log = '/home/UFAD/guor/Codes_old/MyDemo/Circuit_Partition_Tool_data/intermediate_files_sin_20220927201525/intermediate_files_sin_20221005164310/iter3/replace_5/dc_top_obf_log.log'
     # strArea = uef.get_area_from_dc_log_file(strDC_top_obf_log)
     # strOverhead = '=(' + strArea + '-' + strDefaultArea + ')/' + strDefaultArea
     # ===================================TEST=====================================

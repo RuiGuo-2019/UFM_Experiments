@@ -10,6 +10,7 @@ import ufm_delete_invalid_conflict_subckt
 import argparse
 import shutil
 import re
+import sys
 
 import Ntk_Parser
 from Ntk_Struct import *
@@ -21,6 +22,24 @@ class ufm_experiment_flow:
         self.strInvalidConflictSubcktFile = os.path.join(os.path.split(self.strRecordFile)[0], 'InvalidConflictSubckt.txt')
         self.workdir = os.getcwd()
         self.path_abc = os.path.abspath('/home/UFAD/guor/Codes_old/Python/MyDemo/UFM/abc-master-Sazadur/abc')
+        self.yosys_abc_path = ''
+        r = os.popen('which yosys-abc')
+        text_yosys_abc = r.read()
+        text_yosys_abc = text_yosys_abc.replace('\n','')
+        r.close()
+        r = os.popen('which yosys')
+        text_yosys = r.read()
+        text_yosys = text_yosys.replace('\n','')
+        r.close()
+        if("which: no " in text_yosys_abc):
+            self.yosys_abc_path = '/usr/local/bin/yosys-abc'
+            self.yosys_path = '/usr/local/bin/yosys'
+        else:
+            self.yosys_abc_path = text_yosys_abc
+            self.yosys_path = text_yosys
+        
+        if(True != os.path.exists(self.yosys_abc_path)):
+            print('yosys-abc is not exist! Please install yosys first!')
         self.path_sld = os.path.abspath('/home/UFAD/guor/Codes_old/Python/MyDemo/UFM/FromSazadur/Rui/spramod-host15-logic-encryption-7fdc93c47b0e/bin/sld')
         self.path_template_modify_iters_csh = os.path.join(self.workdir, 'modify_iters.csh')
         self.path_template_modify_top_plx = os.path.join(self.workdir, 'modify_top.plx')
@@ -44,6 +63,8 @@ class ufm_experiment_flow:
         self.last_regular_num = 0
         self.circuit_graph = {}
         self.strBench_LUTRoot = ''
+        self.in_port_prefix = 'i_cg_'
+        self.out_port_prefix = 'o_cg_'
     
     def get_exist_lut_files(self, strRTL_LUTRoot):
         listLUTFiles = os.listdir(strRTL_LUTRoot)
@@ -1192,6 +1213,122 @@ class ufm_experiment_flow:
         
         return bench_file
 
+    def bench_to_v(self, bench_file, v_file):
+        bench_file = os.path.abspath(bench_file)
+        v_file = os.path.abspath(v_file)
+        workdir = os.path.split(bench_file)[0]
+        log_filename = 'yosys-abc-out.log'
+        proc = None
+        sys.stdout.flush()
+        cmd = []
+        cmd_output = []
+        strScript = 'read ' + bench_file + ';write_verilog ' + v_file
+        # strScript = '"' + strScript + '"'
+        cmd.append(self.yosys_abc_path)
+        cmd.append('-c')
+        cmd.append(strScript)
+        try:
+            proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,  # We grab stdout
+                    stderr=subprocess.STDOUT,  # stderr redirected to stderr
+                    universal_newlines=True,  # Lines always end in \n
+                    cwd=str(workdir),  # Where to run the command
+                )
+            log_filename = workdir + '/' + log_filename
+            with open(log_filename, "a") as log_f:
+                    # Print the command at the top of the log
+                    log_f.write(" ".join(cmd))
+                    log_f.write("\n")
+                    # Read from subprocess output
+                    for line in proc.stdout:
+                        # Send to log file
+                        log_f.write(line)
+                        # Save the output
+                        cmd_output.append(line)
+                    # Should now be finished (since we stopped reading from proc.stdout),
+                    # sets the return code
+                    proc.wait()
+        finally:
+            # Clean-up if we did not exit cleanly
+            if proc:
+                if proc.returncode is None:
+                    # Still running, stop it
+                    proc.terminate()
+
+    def replace_square_brackets(self, desfile):
+        with open(desfile, 'r') as f:
+            listContent = f.readlines()
+        
+        for i in range(len(listContent)):
+            if('//' == listContent[i][0:2]):
+                continue
+            else:
+                listContent[i] = listContent[i].replace('[', 'q')
+                listContent[i] = listContent[i].replace(']', 'p')
+        
+        with open(desfile, 'w') as f:
+            for line in listContent:
+                f.write(line)
+
+        return desfile
+
+    def replace_slash_and_back_slash(self, v_file, str_back_slash, str_slash):
+        with open(v_file, 'r') as vf:
+            listContent = vf.readlines()
+
+        for i in range(len(listContent)):
+            if('//' == listContent[i][0:2]):
+                continue
+            else:
+                listContent[i] = listContent[i].replace('\\', str_back_slash)
+                listContent[i] = listContent[i].replace('/', str_slash)
+        
+        with open(v_file, 'w') as vf:
+            for line in listContent:
+                vf.write(line)
+
+        return v_file
+
+    def verilog_minmodule_name_optimizer(self, v_file):
+        with open(v_file,'r') as vf:
+            parsed_f = (vf.read()).split(";")
+        for i in range(len(parsed_f)):
+            #######################################
+            # match module names
+            #######################################
+            if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", parsed_f[i])):
+                strModule = re.findall(r'[\n\s]*module\s+.+\(', parsed_f[i])
+                for j in range(len(strModule)):
+                    old_name = ""
+                    old_name = strModule[j][strModule[j].find('module')+len('module'):strModule[j].find('(')]
+                    old_name = old_name.replace(' ','')
+                    new_name = os.path.split(old_name)[1]
+                    parsed_f[i] = parsed_f[i].replace(old_name, new_name)
+                break
+        output_file = os.path.join(os.path.split(v_file)[0], os.path.splitext(os.path.split(v_file)[1])[0]+'_minname.v')
+        with open(output_file, 'w') as of:
+            for line in parsed_f:
+                if('endmodule' in line):
+                    of.write(line)
+                else:
+                    of.write(line+';')
+        return output_file
+
+    def _eliminate_basic_syntax_errors_for_verilog(self, v_file):
+        with open(v_file,'r') as vf:
+            lines = vf.readlines()
+        with open(v_file, 'w') as vf:
+            for line in lines:
+                if(re.search(r"\,[\s]*[\)\;]+", line)):
+                    strErr = re.findall(r'\,[\s]*[\)\;]+', line)
+                    for j in strErr:
+                        strTemp = j.replace(',','')
+                        line = line.replace(j,strTemp)
+                
+                vf.write(line)
+        return v_file
+
     def _rename_signals_in_bench(self, bench_file): # rename signals with 'qnp' to '[n]'
         bench_file = self.resort_input_and_output_ports_in_bench(bench_file)
         
@@ -1248,24 +1385,137 @@ class ufm_experiment_flow:
                 line = line.strip('\n')
                 bf.write(line+'\n')
 
+
+    def _generate_sub_circuit_graph(self, list_nodes_name, temp_circuit_graph, b_sub_circuit_or_remain_part=True): # b_sub_circuit_or_remain_part True-subckts, False-remain part
+        temp_circuit_graph.PI = []
+        temp_circuit_graph.PO = []
+        temp_circuit_graph.PPI = []
+        temp_circuit_graph.PPO = []
+        in_port_prefix = 'i_cg_'
+        in_port_prefix = self.in_port_prefix
+        out_port_prefix = self.out_port_prefix
+        # generate sub circuit graph
+        if(True == b_sub_circuit_or_remain_part): # selected sub circuit
+            for graph_node in self.circuit_graph.object_list:
+                if(graph_node.name in list_nodes_name):
+                    if(graph_node in self.circuit_graph.PI):
+                        temp_circuit_graph.PI.append(temp_circuit_graph.name_to_node[graph_node.name])
+                    if(graph_node in self.circuit_graph.PO):
+                        temp_circuit_graph.PO.append(temp_circuit_graph.name_to_node[graph_node.name])
+                    listInputName = []
+                    listOutputName = []
+                    # input nodes
+                    for in_node in graph_node.fan_in_node:
+                        if(in_node.name not in listInputName):
+                            listInputName.append(in_node.name)
+                    for in_node_name in listInputName:
+                        if(in_node_name not in list_nodes_name):
+                            temp_in_node_name = in_port_prefix + in_node_name # input_circuitgraph_[temp_in_node.name]
+                            if(temp_in_node_name not in temp_circuit_graph.name_to_node.keys()):
+                                temp_in_node = Ntk_Parser.NtkObject(temp_in_node_name)
+                                temp_circuit_graph.add_object(temp_in_node, 'IPT')
+                                temp_circuit_graph.PI.append(temp_in_node)
+                            else:
+                                temp_in_node = temp_circuit_graph.name_to_node[temp_in_node_name]
+                            temp_circuit_graph.disconnect_objectives_by_name(in_node_name, graph_node.name)
+                            temp_circuit_graph.connect_objectives_by_name(temp_in_node.name, graph_node.name)
+                                
+                    # output nodes
+                    for out_node in graph_node.fan_out_node:
+                        if(out_node.name not in listOutputName):
+                            listOutputName.append(out_node.name)
+                    for out_node_name in listOutputName:
+                        if(out_node_name not in list_nodes_name):
+                            if(temp_circuit_graph.name_to_node[graph_node.name] not in temp_circuit_graph.PO):
+                                temp_circuit_graph.PO.append(temp_circuit_graph.name_to_node[graph_node.name])
+                                
+                            temp_circuit_graph.disconnect_objectives_by_name(graph_node.name, out_node_name)                      
+      
+            # re-construct node list
+            listNodesName = []
+            for graph_node in temp_circuit_graph.object_list:
+                if(graph_node.name not in listNodesName):
+                    listNodesName.append(graph_node.name)
+            for graph_node_name in listNodesName:
+                # if(0 == graph_node.gate_type):
+                if((graph_node_name not in list_nodes_name) and (graph_node_name in self.circuit_graph.name_to_node.keys())):
+                    temp_circuit_graph.disconnect_objectives_from_circuit_graph(temp_circuit_graph.name_to_node[graph_node_name]) #disconnect from whole graph
+            for graph_node_name in listNodesName:
+                if(graph_node_name in temp_circuit_graph.name_to_node.keys()):
+                    temp_node = temp_circuit_graph.name_to_node[graph_node_name]
+                    if(temp_node.name not in list_nodes_name):
+                        temp_circuit_graph.remove_object(temp_node) #remove from whole graph
+        else: # remain part
+            for graph_node in self.circuit_graph.object_list:
+                if(graph_node.name not in list_nodes_name):
+                    if(graph_node in self.circuit_graph.PI):
+                        temp_circuit_graph.PI.append(temp_circuit_graph.name_to_node[graph_node.name])
+                    if(graph_node in self.circuit_graph.PO):
+                        temp_circuit_graph.PO.append(temp_circuit_graph.name_to_node[graph_node.name])
+                    # input nodes
+                    for in_node in graph_node.fan_in_node:
+                        if(in_node.name in list_nodes_name):
+                            temp_in_node_name = in_port_prefix + in_node.name # input_circuitgraph_[temp_in_node.name]
+                            if(temp_in_node_name not in temp_circuit_graph.name_to_node.keys()):
+                                temp_in_node = Ntk_Parser.NtkObject(temp_in_node_name)
+                                temp_circuit_graph.add_object(temp_in_node, 'IPT')
+                                temp_circuit_graph.PI.append(temp_in_node)
+                            else:
+                                temp_in_node = temp_circuit_graph.name_to_node[temp_in_node_name]
+                            temp_circuit_graph.disconnect_objectives_by_name(in_node.name, graph_node.name)
+                            temp_circuit_graph.connect_objectives_by_name(temp_in_node.name, graph_node.name)
+                                
+                    # output nodes
+                    for out_node in graph_node.fan_out_node:
+                        if(out_node.name in list_nodes_name):
+                            if(temp_circuit_graph.name_to_node[graph_node.name] not in temp_circuit_graph.PO):
+                                temp_circuit_graph.PO.append(temp_circuit_graph.name_to_node[graph_node.name])
+                                
+                            temp_circuit_graph.disconnect_objectives_by_name(graph_node.name, out_node.name)                      
+        
+            # re-construct node list
+            for graph_node in temp_circuit_graph.object_list:
+                # if(0 == graph_node.gate_type):
+                if(graph_node.name in list_nodes_name):
+                    temp_circuit_graph.disconnect_objectives_from_circuit_graph(graph_node) #disconnect from whole graph
+            for graph_node in self.circuit_graph.object_list:
+                if(graph_node.name in temp_circuit_graph.name_to_node.keys()):
+                    temp_node = temp_circuit_graph.name_to_node[graph_node.name]
+                    if(temp_node.name in list_nodes_name):
+                        temp_circuit_graph.remove_object(temp_node) #remove from whole graph
+
+        # generate remain circuit graph
+        return temp_circuit_graph
+
     # haven't debug!!!!!!!!!!!!!!!!!!
-    def generate_bench_without_dc(self, strIterFolder, circuit_graph, strRecordFile, intReplacement):
+    def generate_bench_of_multiple_subckts(self, strIterFolder, input_path_bench, strRecordFile, intReplacement, listsubckt = []):
+        circuit_graph = Ntk_Parser.ntk_parser(input_path_bench)
+        remain_circuit_graph = Ntk_Parser.ntk_parser(input_path_bench)
         strIterNum = os.path.split(strIterFolder)[1].replace('iter', '')
-        listReplaceSubckts = self.get_redacted_subckts_list(strIterNum, intReplacement, listDeleteSubckt = [], nReplaceRegularSubckt = 0)
+        if(0 == len(listsubckt)):
+            listReplaceSubckts = self.get_redacted_subckts_list(strIterNum, intReplacement, listDeleteSubckt = [], nReplaceRegularSubckt = 0)
+        else:
+            listReplaceSubckts = listsubckt
         listLUT_v = self.get_exist_lut_files(self.strRTL_LUTRoot)
         listLUT_bench = self.get_exist_lut_files(self.strBench_LUTRoot)
         listNodes = []
         nKeyInputExist = len(circuit_graph.KI)
         nKeyInputCount = nKeyInputExist
+
+        listNodesObj = []
+        list_nodes_name = []
+        dictSubcktInfo = {}
         for subckt in listReplaceSubckts:
             cktname = os.path.join(strIterFolder, subckt[:subckt.find('\t')]+'.sc')
             with open(cktname, 'r') as scf:
                 listNodes = scf.readlines()
-            listNodesObj = []
+            dictSubcktInfo[subckt[:subckt.find('\t')]] = len(listNodes)
+            
             for i in range(len(listNodes)):
                 listNodes[i] = listNodes[i].strip('\n')
                 if(listNodes[i] in circuit_graph.name_to_node.keys()):
                     listNodesObj.append(circuit_graph.name_to_node[listNodes[i]])
+                    list_nodes_name.append(listNodes[i])
                 else:
                     print("Cannot find node in circuit graph!")
             # for node in listNodes:
@@ -1275,80 +1525,133 @@ class ufm_experiment_flow:
             #     else:
             #         print("Cannot find node in circuit graph!")
 
-            # replace subckts by lut
-            listInputNodes, listOutputNodes, listDeleteNodes = self.get_input_and_output(circuit_graph, listNodes, listNodesObj)
-            strLUTFileName = 'lut_'+str(len(listInputNodes)) + '_' + str(len(listOutputNodes)) + '.v'
-            strLUTBenchName = 'lut_'+str(len(listInputNodes)) + '_' + str(len(listOutputNodes)) + '.bench'
-            strLUTFilePath = os.path.join(self.strRTL_LUTRoot, strLUTFileName)
-            strLUTBenchPath = os.path.join(self.strBench_LUTRoot, strLUTBenchName)
-            if(strLUTFileName not in listLUT_v):
-                self.generate_lut_v(strLUTFilePath)
-            if(strLUTBenchName not in listLUT_bench):
-                self.convert_lut_v_to_bench(strLUTFilePath, strLUTBenchPath)
-            LUT_Circuit_Graph = Ntk_Parser.ntk_parser(strLUTBenchPath)
-            listLUTPrimaryInput = []
-            for node in LUT_Circuit_Graph.PI:
-                if('prog_keyq' not in node.name):
-                    listLUTPrimaryInput.append(node)
-            if((len(listInputNodes) != len(listLUTPrimaryInput)) or (len(listOutputNodes) != len(LUT_Circuit_Graph.PO))):
-                print("Unequal input/output nodes!")
 
-            
-            # check name of nodes
-            for obj in LUT_Circuit_Graph.object_list:
-                if('prog_keyq' in obj.name):
-                    strNewName = 'keyinputq'+str(nKeyInputCount)+'p'
-                    LUT_Circuit_Graph.change_node_name(obj, strNewName)
-                    nKeyInputCount = nKeyInputCount + 1
-                elif(obj.name in circuit_graph.name_to_node.keys()): # name already exist
-                    strNewName = obj.name+'_rename_'+cktname
-                    nCount = 0
-                    while(strNewName in circuit_graph.name_to_node.keys()):
-                        strNewName = strNewName + str(nCount)
-                        nCount = nCount + 1
-                    LUT_Circuit_Graph.change_node_name(obj, strNewName)
-                circuit_graph.add_object(obj)
-                if('keyinputq' in obj.name):
-                    circuit_graph.KI.append(obj)
+        listInputNodes, listOutputNodes, listDeleteNodes = self.get_input_and_output(circuit_graph, listNodes, listNodesObj)
 
-            
-            # map input/output nodes
-            dictInputNodesMap = {}
-            dictOutputNodesMap = {}
-            for i in range(len(listInputNodes)):
-                if(listInputNodes[i][1] == 'PI'):
-                    circuit_graph.add_PI(circuit_graph.name_to_node(listLUTPrimaryInput[i].name))
-                elif(listInputNodes[i][1] == 'normal'):
-                    dictInputNodesMap[listInputNodes[i][0].name] = listLUTPrimaryInput[i].name
-                    # replace LUT's input nodes by outer nodes
-                    for opt_node in circuit_graph.name_to_node[listLUTPrimaryInput[i].name].fan_out_node:
-                        circuit_graph.connect_objectives(listInputNodes[i][0], opt_node)
-                    circuit_graph.disconnect_objectives_from_circuit_graph(circuit_graph.name_to_node[listLUTPrimaryInput[i].name])
-                    circuit_graph.remove_object(circuit_graph.name_to_node[listLUTPrimaryInput[i].name])
-            for i in range(len(listOutputNodes)):
-                if(listOutputNodes[i][1] == 'PO'):
-                    circuit_graph.add_PO(circuit_graph.name_to_node[LUT_Circuit_Graph.PO[i].name])
-                elif(listOutputNodes[i][1] == 'normal'):
-                    dictOutputNodesMap[LUT_Circuit_Graph.PO[i].name] = listOutputNodes[i][0].name
-                    # replace LUT's output nodes by outer nodes
-                    circuit_graph.connect_objectives(circuit_graph.name_to_node[LUT_Circuit_Graph.PO[i].name], listOutputNodes[i][0])
-
-
-            # delete old subckt
-            for deletenode in listDeleteNodes:
-                circuit_graph.disconnect_objectives_from_circuit_graph(deletenode)
-                circuit_graph.remove_object(deletenode)
-            
-        print('Subckts redaction finished!')
+        sub_circuit_graph = self._generate_sub_circuit_graph(list_nodes_name, circuit_graph, b_sub_circuit_or_remain_part=True)
+        remain_part_circuit_graph = self._generate_sub_circuit_graph(list_nodes_name, remain_circuit_graph, b_sub_circuit_or_remain_part=False)
         intermediatePath = os.path.split(strRecordFile)[0]
         if(False == os.path.exists(intermediatePath)):
             os.makedirs(intermediatePath)
-        strObfBenchFile = os.path.join(intermediatePath, 'top_obf.bench')
+        
+        strLogFile = os.path.join(intermediatePath, 'RedactSubcktsInfo.txt')
+        nCount = 0
+        with open(strLogFile, 'w') as lf:
+            for key in dictSubcktInfo.keys():
+                strTemp = key + ',' + str(dictSubcktInfo[key]) + '\n'
+                nCount = nCount + dictSubcktInfo[key]
+                lf.write(strTemp)
+            lf.write('Total Nodes: ' + str(nCount))
+            # for subckt in listReplaceSubckts:
+            #     cktname = subckt[:subckt.find('\t')]
+            #     cktname = cktname.strip('\n')
+            #     cktname = cktname+'\n'
+            #     lf.write(cktname)
+
+        strSubcktBenchFile = os.path.join(intermediatePath, 'sub_ckts.bench')
+        strRemainBenchFile = os.path.join(intermediatePath, 'remain_part.bench')
         # strOriBenchFile = os.path.join(intermediatePath, 'top.bench')
         # shutil.copy()
-        Ntk_Parser.ntk_to_bench(circuit_graph, strObfBenchFile)
+        Ntk_Parser.ntk_to_bench(sub_circuit_graph, strSubcktBenchFile)
+        Ntk_Parser.ntk_to_bench(remain_part_circuit_graph, strRemainBenchFile)
         # self._rename_signals_in_bench(strObfBenchFile)
-        return strObfBenchFile
+        return strSubcktBenchFile, strRemainBenchFile
+
+
+
+
+        # for subckt in listReplaceSubckts:
+        #     cktname = os.path.join(strIterFolder, subckt[:subckt.find('\t')]+'.sc')
+        #     with open(cktname, 'r') as scf:
+        #         listNodes = scf.readlines()
+        #     listNodesObj = []
+        #     for i in range(len(listNodes)):
+        #         listNodes[i] = listNodes[i].strip('\n')
+        #         if(listNodes[i] in circuit_graph.name_to_node.keys()):
+        #             listNodesObj.append(circuit_graph.name_to_node[listNodes[i]])
+        #         else:
+        #             print("Cannot find node in circuit graph!")
+        #     # for node in listNodes:
+        #     #     strTemp = node.strip('\n')
+        #     #     if(strTemp in circuit_graph.name_to_node.keys()):
+        #     #         listNodesObj.append(circuit_graph.name_to_node[strTemp])
+        #     #     else:
+        #     #         print("Cannot find node in circuit graph!")
+
+        #     # replace subckts by lut
+        #     listInputNodes, listOutputNodes, listDeleteNodes = self.get_input_and_output(circuit_graph, listNodes, listNodesObj)
+        #     strLUTFileName = 'lut_'+str(len(listInputNodes)) + '_' + str(len(listOutputNodes)) + '.v'
+        #     strLUTBenchName = 'lut_'+str(len(listInputNodes)) + '_' + str(len(listOutputNodes)) + '.bench'
+        #     strLUTFilePath = os.path.join(self.strRTL_LUTRoot, strLUTFileName)
+        #     strLUTBenchPath = os.path.join(self.strBench_LUTRoot, strLUTBenchName)
+        #     if(strLUTFileName not in listLUT_v):
+        #         self.generate_lut_v(strLUTFilePath)
+        #     if(strLUTBenchName not in listLUT_bench):
+        #         self.convert_lut_v_to_bench(strLUTFilePath, strLUTBenchPath)
+        #     LUT_Circuit_Graph = Ntk_Parser.ntk_parser(strLUTBenchPath)
+        #     listLUTPrimaryInput = []
+        #     for node in LUT_Circuit_Graph.PI:
+        #         if('prog_keyq' not in node.name):
+        #             listLUTPrimaryInput.append(node)
+        #     if((len(listInputNodes) != len(listLUTPrimaryInput)) or (len(listOutputNodes) != len(LUT_Circuit_Graph.PO))):
+        #         print("Unequal input/output nodes!")
+
+            
+        #     # check name of nodes
+        #     for obj in LUT_Circuit_Graph.object_list:
+        #         if('prog_keyq' in obj.name):
+        #             strNewName = 'keyinputq'+str(nKeyInputCount)+'p'
+        #             LUT_Circuit_Graph.change_node_name(obj, strNewName)
+        #             nKeyInputCount = nKeyInputCount + 1
+        #         elif(obj.name in circuit_graph.name_to_node.keys()): # name already exist
+        #             strNewName = obj.name+'_rename_'+cktname
+        #             nCount = 0
+        #             while(strNewName in circuit_graph.name_to_node.keys()):
+        #                 strNewName = strNewName + str(nCount)
+        #                 nCount = nCount + 1
+        #             LUT_Circuit_Graph.change_node_name(obj, strNewName)
+        #         circuit_graph.add_object(obj)
+        #         if('keyinputq' in obj.name):
+        #             circuit_graph.KI.append(obj)
+
+            
+        #     # map input/output nodes
+        #     dictInputNodesMap = {}
+        #     dictOutputNodesMap = {}
+        #     for i in range(len(listInputNodes)):
+        #         if(listInputNodes[i][1] == 'PI'):
+        #             circuit_graph.add_PI(circuit_graph.name_to_node(listLUTPrimaryInput[i].name))
+        #         elif(listInputNodes[i][1] == 'normal'):
+        #             dictInputNodesMap[listInputNodes[i][0].name] = listLUTPrimaryInput[i].name
+        #             # replace LUT's input nodes by outer nodes
+        #             for opt_node in circuit_graph.name_to_node[listLUTPrimaryInput[i].name].fan_out_node:
+        #                 circuit_graph.connect_objectives(listInputNodes[i][0], opt_node)
+        #             circuit_graph.disconnect_objectives_from_circuit_graph(circuit_graph.name_to_node[listLUTPrimaryInput[i].name])
+        #             circuit_graph.remove_object(circuit_graph.name_to_node[listLUTPrimaryInput[i].name])
+        #     for i in range(len(listOutputNodes)):
+        #         if(listOutputNodes[i][1] == 'PO'):
+        #             circuit_graph.add_PO(circuit_graph.name_to_node[LUT_Circuit_Graph.PO[i].name])
+        #         elif(listOutputNodes[i][1] == 'normal'):
+        #             dictOutputNodesMap[LUT_Circuit_Graph.PO[i].name] = listOutputNodes[i][0].name
+        #             # replace LUT's output nodes by outer nodes
+        #             circuit_graph.connect_objectives(circuit_graph.name_to_node[LUT_Circuit_Graph.PO[i].name], listOutputNodes[i][0])
+
+
+        #     # delete old subckt
+        #     for deletenode in listDeleteNodes:
+        #         circuit_graph.disconnect_objectives_from_circuit_graph(deletenode)
+        #         circuit_graph.remove_object(deletenode)
+            
+        # print('Subckts redaction finished!')
+        # intermediatePath = os.path.split(strRecordFile)[0]
+        # if(False == os.path.exists(intermediatePath)):
+        #     os.makedirs(intermediatePath)
+        # strObfBenchFile = os.path.join(intermediatePath, 'top_obf.bench')
+        # # strOriBenchFile = os.path.join(intermediatePath, 'top.bench')
+        # # shutil.copy()
+        # Ntk_Parser.ntk_to_bench(circuit_graph, strObfBenchFile)
+        # # self._rename_signals_in_bench(strObfBenchFile)
+        # return strObfBenchFile
         
         
 
@@ -1794,7 +2097,10 @@ if __name__ == '__main__':
     #     listTest.remove(i)
 
 
-    strDataRoot = '/home/UFAD/guor/Codes_old/MyDemo/Circuit_Partition_Tool_data/sin_20220927111930_ms0_af_7492'
+    strDataRoot = '/home/UFAD/guor/experiment_data/UFM/Circuit_Partition_Tool_data/arbiter_20230104040630_ms0_af_5804'
+    strRTL_LUTRoot = '/home/UFAD/guor/intermediate_data_files/MyDemo/UFM/rtl'
+    if(False == os.path.exists(strRTL_LUTRoot)):
+        os.makedirs(strRTL_LUTRoot)
     strtime = time.strftime("%Y%m%d%H%M%S", time.localtime())
     
 
@@ -1840,14 +2146,14 @@ if __name__ == '__main__':
     strBenchName = os.path.split(strDataRoot)[1]
     strBenchName = strBenchName[:strBenchName.find('_')]
 
-    strRTL_LUTRoot = '/home/UFAD/guor/Codes_old/MyDemo/Circuit_Partition_Tool_data/rtl'
+    
     strBench_LUTRoot = os.path.join(os.path.split(strRTL_LUTRoot)[0], 'lut_bench')
 
     if(False == os.path.exists(strBench_LUTRoot)):
         os.makedirs(strBench_LUTRoot)
 
     
-    strRecordFile = os.path.join(strOutputDir,'intermediate_files_CG_'+strBenchName+'_'+strtime)
+    strRecordFile = os.path.join(strOutputDir,'intermediate_files_efpga_'+strBenchName+'_'+strtime)
     strRecordFile = os.path.join(strRecordFile, 'record_'+strtime+'.txt')
     # strRecordFile = '/home/UFAD/guor/Codes_old/MyDemo/Circuit_Partition_Tool_data/intermediate_files_'+strBenchName+'_'+strtime+'/record_'+strtime+'.txt'
     print(strRecordFile)
@@ -1895,19 +2201,40 @@ if __name__ == '__main__':
         if(item.endswith(".bench")):
             listBench.append(os.path.join(strDataRoot, item))
     input_path_bench = listBench[0]
-    circuit_graph = Ntk_Parser.ntk_parser(input_path_bench)
+    # circuit_graph = Ntk_Parser.ntk_parser(input_path_bench)
     # circuit_graph.change_node_name(circuit_graph.name_to_node['START'], 'START1')
-    uef.circuit_graph = circuit_graph
+    uef.circuit_graph = Ntk_Parser.ntk_parser(input_path_bench)
 
-    strObfBenchFile = uef.generate_bench_without_dc(strIterFolder, circuit_graph, strRecordFile, intReplacement=1)
-    strIntermediateFolder = os.path.split(strRecordFile)[0]
-    if(False == os.path.exists(strIntermediateFolder)):
-        os.makedirs(strIntermediateFolder)
-    strOriBenchFile = uef.copy_original_bench_to_intermediate_folder(input_path_bench, strIntermediateFolder)
-    listBenchFile = [strOriBenchFile, strObfBenchFile]
-    uef._rename_signals_in_bench(listBenchFile[0])
-    uef._rename_signals_in_bench(listBenchFile[1])
-    SAToutputlog, nTimeout = uef.sat_attack(listBenchFile, strIntermediateFolder, 86400)
+    strSubcktBenchFile, strRemainBenchFile = uef.generate_bench_of_multiple_subckts(strIterFolder, input_path_bench, strRecordFile, intReplacement=5, listsubckt = [])
+    uef._rename_signals_in_bench(strSubcktBenchFile)
+    out_v_file = os.path.split(strSubcktBenchFile)[0] + '/sub_ckts_yosys.v'
+    uef.bench_to_v(strSubcktBenchFile, out_v_file)
+    out_v_file = uef._eliminate_basic_syntax_errors_for_verilog(out_v_file)
+    out_v_file_minname = uef.verilog_minmodule_name_optimizer(out_v_file)
+    str_back_slash = '_bs_'
+    str_slash = '_s_'
+    out_v_file_minname = uef.replace_slash_and_back_slash(out_v_file_minname, str_back_slash, str_slash)
+    out_v_file_minname = uef.replace_square_brackets(out_v_file_minname)
+    print('Multi-subckts generated!')
+
+    uef._rename_signals_in_bench(strRemainBenchFile)
+    out_v_file = os.path.split(strRemainBenchFile)[0] + '/remain_parts_yosys.v'
+    uef.bench_to_v(strRemainBenchFile, out_v_file)
+    out_v_file = uef._eliminate_basic_syntax_errors_for_verilog(out_v_file)
+    out_v_file_minname = uef.verilog_minmodule_name_optimizer(out_v_file)
+    str_back_slash = '_bs_'
+    str_slash = '_s_'
+    out_v_file_minname = uef.replace_slash_and_back_slash(out_v_file_minname, str_back_slash, str_slash)
+    out_v_file_minname = uef.replace_square_brackets(out_v_file_minname)
+    print('Remain-parts generated!')
+    # strIntermediateFolder = os.path.split(strRecordFile)[0]
+    # if(False == os.path.exists(strIntermediateFolder)):
+    #     os.makedirs(strIntermediateFolder)
+    # strOriBenchFile = uef.copy_original_bench_to_intermediate_folder(input_path_bench, strIntermediateFolder)
+    # listBenchFile = [strOriBenchFile, strObfBenchFile]
+    # uef._rename_signals_in_bench(listBenchFile[0])
+    # uef._rename_signals_in_bench(listBenchFile[1])
+    # SAToutputlog, nTimeout = uef.sat_attack(listBenchFile, strIntermediateFolder, 86400)
 
 
     
