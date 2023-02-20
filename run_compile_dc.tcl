@@ -26,7 +26,7 @@ ungroup -flatten -all
 #set_app_var compile_no_new_cells_at_top_level true
 compile -ungroup_all -boundary_optimization -area_effort high
 #source ./dft_constraints.tcl
-change_name -rules verilog -hierarchy
+#change_name -rules verilog -hierarchy
 #exec mkdir ./netlist/${module}
 #write_sdc -nosplit "./netlist/${module}/${module}_for_pd.sdc"
 #write -format verilog -hierarchy -output "./netlist/${module}.v"

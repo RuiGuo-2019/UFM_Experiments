@@ -9,6 +9,8 @@ import copy
 import ufm_delete_invalid_conflict_subckt
 import argparse
 import shutil
+import re
+
 class ufm_experiment_flow:
     def __init__(self, strDataRoot, strRecordFile, strRTL_LUTRoot):
         self.strRTL_LUTRoot = strRTL_LUTRoot
@@ -22,6 +24,8 @@ class ufm_experiment_flow:
         self.path_template_modify_top_plx = os.path.join(self.workdir, 'modify_top.plx')
         self.path_template_run_compile_dc_tcl = os.path.join(self.workdir, 'run_compile_dc.tcl')
         self.path_template_get_bench_tcl = os.path.join(self.workdir, 'get_bench.tcl')
+        self.subckt_list_file_name = '_recommend_sub_ckt.txt'
+        # self.subckt_list_file_name = '_conflict_subckt.txt'
         self.strDataRoot = strDataRoot
         self.strScriptsRoot = os.path.split(self.strDataRoot)[0]
         self.strDataRootName = os.path.split(self.strDataRoot)[1]
@@ -37,6 +41,7 @@ class ufm_experiment_flow:
         self.kickone = 0
         self.last_conflict_num = 0
         self.last_regular_num = 0
+        self.IO_location = 6 # 6th'\t': input num 6th\t output num
     
     def get_exist_lut_files(self, strRTL_LUTRoot):
         self.listLUTFiles = os.listdir(strRTL_LUTRoot)
@@ -88,21 +93,32 @@ class ufm_experiment_flow:
                 if(1 != len(listTemp)):
                     print('Find more than 1 or no results including %s' % conflictsubckt)
                 else:
-                    if(5 <= listTemp[0].count('\t')):
+                    if((self.IO_location - 1) <= listTemp[0].count('\t')):
                         strTemp = listTemp[0]
                         strTemp = strTemp.strip('\n')
-                        while(1 < strTemp.count('\t')):
+                        # while(1 < strTemp.count('\t')):
+                        for tabsigncount in range(self.IO_location - 1):
                             strTemp = strTemp[strTemp.find('\t')+len('\t'):]
+                        indices = [ind for ind, c in enumerate(strTemp) if c == '\t']
+                        if(1 < len(indices)):
+                            endindex = indices[1]
+                        else:
+                            endindex = len(strTemp)
                         nInput = int(strTemp[:strTemp.find('\t')])
-                        nOutput = int(strTemp[strTemp.find('\t')+len('\t'):])    
+                        nOutput = int(strTemp[strTemp.find('\t')+len('\t'):endindex])    
                     listTemp.append(nInput)
                     listTemp.append(nOutput)
                     listNewConflictSubCktInfo.append(listTemp)
             
             listNewConflictSubCktInfo = sorted(listNewConflictSubCktInfo,key = lambda x:x[1], reverse = False)
         
-        for item in listNewConflictSubCktInfo:
-            listNewOrderConflictSubCkt.append(item[0][:item[0].find('\t')])
+            for item in listNewConflictSubCktInfo:
+                listNewOrderConflictSubCkt.append(item[0][:item[0].find('\t')])
+        elif(1 == nSortMode): # 1-score from high to low
+            for conflictsubckt in listConflictSubCkt:
+                conflictsubckt = conflictsubckt.strip()
+                conflictsubckt = conflictsubckt.replace('\n','')
+                listNewOrderConflictSubCkt.append(conflictsubckt)
         
         return listNewOrderConflictSubCkt
 
@@ -110,7 +126,8 @@ class ufm_experiment_flow:
     def modify_top_plx_by_conflict_order(self, strIterNum, intReplacement, listDeleteSubckt = [], nReplaceRegularSubckt = 0):
         strIterOrderFile = os.path.join(self.strDataRoot, 'sub_circuit')
         strIterOrderFile = os.path.join(strIterOrderFile, 'iter'+strIterNum)
-        strIterOrderFile = os.path.join(strIterOrderFile, '_conflict_subckt.txt')
+        # strIterOrderFile = os.path.join(strIterOrderFile, '_conflict_subckt.txt')
+        strIterOrderFile = os.path.join(strIterOrderFile, self.subckt_list_file_name)
 
 
         with open(strIterOrderFile, 'r') as iof:
@@ -130,10 +147,16 @@ class ufm_experiment_flow:
         strIterInfoFile = os.path.join(strIterInfoFile, '_iter'+strIterNum+'_info.txt')
         with open(strIterInfoFile, 'r') as iif:
             subcktinfo = iif.readlines()
-        del(subcktinfo[0])
-        del(subcktinfo[0])
 
-        listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=0)
+        while('#' == subcktinfo[0][0]):
+            subcktinfo.pop(0)
+        # del(subcktinfo[0])
+        # del(subcktinfo[0])
+
+        if('_recommend_sub_ckt.txt' in strIterOrderFile):
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1)
+        elif('_conflict_subckt.txt' in strIterOrderFile):
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=0)
 
         listReplaceOrder = []
         strKey = 'iter'+strIterNum+'_replace'+str(intReplacement)
@@ -150,13 +173,19 @@ class ufm_experiment_flow:
                 strTemp1 = strTemp1.replace('\t','')
                 strTemp1 = strTemp1.strip()
                 if(strTemp == strTemp1):
-                    if(5 <= item.count('\t')):
+                    if((self.IO_location - 1) <= item.count('\t')):
                         temp = item
-                        while(1 < temp.count('\t')):
+                        # while(1 < temp.count('\t')):
+                        for tabsigncount in range(self.IO_location - 1):
                             temp = temp[temp.find('\t')+len('\t'):]
+                        indices = [ind for ind, c in enumerate(temp) if c == '\t']
+                        if(1 < len(indices)):
+                            endindex = indices[1]
+                        else:
+                            endindex = len(temp)
                         temp = temp.strip('\n')
                         strInput = temp[:temp.find('\t')]
-                        strOutput = temp[temp.find('\t')+len('\t'):]
+                        strOutput = temp[temp.find('\t')+len('\t'):endindex]
                         if(strInput != '0' and strOutput != '0'):
                             listReplaceOrder.append(item)
                             break
@@ -168,6 +197,9 @@ class ufm_experiment_flow:
                             self.listDeleteSubckt.append(strTemp1)
             if(intReplacement <= len(listReplaceOrder)):
                 break
+        
+        while(len(listReplaceOrder) > intReplacement):
+            listReplaceOrder.pop(-1)
 
         with open(self.path_template_modify_top_plx, 'r') as fmtplx:
             lines = fmtplx.readlines()
@@ -180,13 +212,14 @@ class ufm_experiment_flow:
             if(i >= len(listReplaceOrder)):
                 break
             temp = listReplaceOrder[i]
-            if(5 > temp.count('\t')):# no io info
+            if((self.IO_location - 1) > temp.count('\t')):# no io info
                 continue
             else:
                 strRedact = strRedact + temp[:temp.find('\t')]
                 self.dictConflictSubCktRecord[strKey].append(temp[:temp.find('\t')])
                 nTimes = 0
-                while(1 < temp.count('\t')):
+                # while(1 < temp.count('\t')):
+                for tabsigncount in range(self.IO_location - 1):
                     if(0 == nTimes):
                         strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + ', '
                     temp = temp[temp.find('\t')+len('\t'):]
@@ -194,6 +227,12 @@ class ufm_experiment_flow:
                         strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + '\n'
                         nTotalGates = nTotalGates + int(temp[:temp.find('\t')])
                     nTimes = nTimes + 1
+                indices = [ind for ind, c in enumerate(temp) if c == '\t']
+                if(1 < len(indices)):
+                    endindex = indices[1]
+                else:
+                    endindex = len(temp)
+                temp = temp[:endindex]
                 temp = temp.replace('\n','')
                 temp = temp.replace('\t',' ')
                 strLutFileName = 'lut_' + temp + '.v'
@@ -209,52 +248,66 @@ class ufm_experiment_flow:
         nSubcktinfoLens = len(subcktinfo)-1
         nCount = 0
         nReplaceRegularSubckt = intReplacement - len(listReplaceOrder)
-        for i in range(nSubcktinfoLens, -1, -1):
-            if(len(listRegularSubcktRedact) >= nReplaceRegularSubckt):
-                break
-            elif(subcktinfo[i] in listReplaceOrder):
-                continue
-            else:
-                temp = subcktinfo[i]
-                if(5 > temp.count('\t')):
+        if('_conflict_subckt.txt' in strIterOrderFile):
+            for i in range(nSubcktinfoLens, -1, -1):
+                if(len(listRegularSubcktRedact) >= nReplaceRegularSubckt):
+                    break
+                elif(subcktinfo[i] in listReplaceOrder):
                     continue
-                strTemp = temp
-                strTemp1 = strTemp[:strTemp.find('\t')]
-                if(strTemp1 in self.listDeleteSubckt):
-                    continue
-                while(1 < strTemp.count('\t')):
-                    strTemp = strTemp[strTemp.find('\t')+len('\t'):]
-                strTemp = strTemp.strip('\n')
-                strInput = strTemp[:strTemp.find('\t')]
-                strOutput = strTemp[strTemp.find('\t')+len('\t'):]
-                if(strInput == '0' or strOutput == '0'):
-                    if(strTemp1 not in self.listDeleteSubckt):
-                        self.listDeleteSubckt.append(strTemp1)
+                else:
+                    temp = subcktinfo[i]
+                    if((self.IO_location - 1) > temp.count('\t')):
                         continue
+                    strTemp = temp
+                    strTemp1 = strTemp[:strTemp.find('\t')]
+                    if(strTemp1 in self.listDeleteSubckt):
+                        continue
+                    # while(1 < strTemp.count('\t')):
+                    for tabsigncount in range(self.IO_location - 1):
+                        strTemp = strTemp[strTemp.find('\t')+len('\t'):]
+                    indices = [ind for ind, c in enumerate(strTemp) if c == '\t']
+                    if(1 < len(indices)):
+                        endindex = indices[1]
+                    else:
+                        endindex = len(strTemp)
+                    strTemp = strTemp.strip('\n')
+                    strInput = strTemp[:strTemp.find('\t')]
+                    strOutput = strTemp[strTemp.find('\t')+len('\t'):endindex]
+                    if(strInput == '0' or strOutput == '0'):
+                        if(strTemp1 not in self.listDeleteSubckt):
+                            self.listDeleteSubckt.append(strTemp1)
+                            continue
 
-                listRegularSubcktRedactInfo.append(temp)
-                listRegularSubcktRedact.append(temp[:temp.find('\t')])
-                # self.dictConflictSubCktRecord[strKey].append(temp[:temp.find('\t')])
-                strRedact = strRedact + temp[:temp.find('\t')]
-                nTimes = 0
-                while(1 < temp.count('\t')):
-                    if(0 == nTimes):
-                        strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + ', '
-                    temp = temp[temp.find('\t')+len('\t'):]
-                    if(0 == nTimes):
-                        strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + '\n'
-                        nTotalGates = nTotalGates + int(temp[:temp.find('\t')])
-                    nTimes = nTimes + 1
-                temp = temp.replace('\n','')
-                temp = temp.replace('\t',' ')
-                strLutFileName = 'lut_' + temp + '.v'
-                strLutFileName = strLutFileName.replace(' ','_')
-                if(strLutFileName not in self.listLUTFiles):
-                    self.listLUTFiles.append(strLutFileName)
-                    listTemp.append(temp)
-                strRedact = strRedact + "  => '" + temp + "'"
-                strRedact = strRedact + ',\n  '
-                nCount = nCount + 1
+                    listRegularSubcktRedactInfo.append(temp)
+                    listRegularSubcktRedact.append(temp[:temp.find('\t')])
+                    # self.dictConflictSubCktRecord[strKey].append(temp[:temp.find('\t')])
+                    strRedact = strRedact + temp[:temp.find('\t')]
+                    nTimes = 0
+                    # while(1 < temp.count('\t')):
+                    for tabsigncount in range(self.IO_location - 1):
+                        if(0 == nTimes):
+                            strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + ', '
+                        temp = temp[temp.find('\t')+len('\t'):]
+                        if(0 == nTimes):
+                            strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + '\n'
+                            nTotalGates = nTotalGates + int(temp[:temp.find('\t')])
+                        nTimes = nTimes + 1
+                    indices = [ind for ind, c in enumerate(temp) if c == '\t']
+                    if(1 < len(indices)):
+                        endindex = indices[1]
+                    else:
+                        endindex = len(temp)
+                    temp = temp[:endindex]
+                    temp = temp.replace('\n','')
+                    temp = temp.replace('\t',' ')
+                    strLutFileName = 'lut_' + temp + '.v'
+                    strLutFileName = strLutFileName.replace(' ','_')
+                    if(strLutFileName not in self.listLUTFiles):
+                        self.listLUTFiles.append(strLutFileName)
+                        listTemp.append(temp)
+                    strRedact = strRedact + "  => '" + temp + "'"
+                    strRedact = strRedact + ',\n  '
+                    nCount = nCount + 1
 
 
         listSubcktRedactTotal = listReplaceOrder + listRegularSubcktRedactInfo
@@ -340,7 +393,8 @@ class ufm_experiment_flow:
                 strIterInfoFileRoot = os.path.join(self.strDataRoot, 'sub_circuit')
                 strIterInfoFileRoot = os.path.join(strIterInfoFileRoot, 'iter'+strIterNum)
                 strInvalidSubckRecordRoot = os.path.split(self.strInvalidConflictSubcktFile)[0]
-                ufm_delete_invalid_conflict_subckt.delete_invalid_conflict_subckts(strIterInfoFileRoot, strInvalidSubckRecordRoot)
+                # ufm_delete_invalid_conflict_subckt.delete_invalid_conflict_subckts(strIterInfoFileRoot, strInvalidSubckRecordRoot)
+                ufm_delete_invalid_conflict_subckt.delete_invalid_subckts(self.subckt_list_file_name, strIterInfoFileRoot, strInvalidSubckRecordRoot)
         
         # self.dictSubCktRecordTotal[strKey] = self.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
 
@@ -361,8 +415,15 @@ class ufm_experiment_flow:
                 strTemp = '/'+strTemp+'/'+strTemp+'_'
                 if(strTemp in lines[i]):
                     strTemp = j
-                    while(1 < strTemp.count('\t')):
+                    # while(1 < strTemp.count('\t')):
+                    for tabsigncount in range(self.IO_location - 1):
                         strTemp = strTemp[strTemp.find('\t')+len('\t'):]
+                    indices = [ind for ind, c in enumerate(strTemp) if c == '\t']
+                    if(1 < len(indices)):
+                        endindex = indices[1]
+                    else:
+                        endindex = len(strTemp)
+                    strTemp = strTemp[:endindex]
                     strTemp = strTemp.strip('\n')
                     strTemp = strTemp.replace('\t','_')
                     strTemp = os.path.join(LUTFolder, 'lut_'+strTemp+'.v')
@@ -393,12 +454,19 @@ class ufm_experiment_flow:
         strRedact = "  "
         for i in range(intReplacement):
             temp = subcktinfo[i]
-            if(5 > temp.count('\t')):# no io info
+            if((self.IO_location - 1) > temp.count('\t')):# no io info
                 continue
             else:
                 strRedact = strRedact + temp[:temp.find('\t')]
-                while(1 < temp.count('\t')):
+                # while(1 < temp.count('\t')):
+                for tabsigncount in range(self.IO_location - 1):
                     temp = temp[temp.find('\t')+len('\t'):]
+                indices = [ind for ind, c in enumerate(temp) if c == '\t']
+                if(1 < len(indices)):
+                    endindex = indices[1]
+                else:
+                    endindex = len(temp)
+                temp = temp[:endindex]
                 temp = temp.replace('\n','')
                 temp = temp.replace('\t',' ')
                 if(temp not in listTemp):
@@ -689,6 +757,100 @@ class ufm_experiment_flow:
         print("Generate LUT Finish!")
         os.chdir(self.workdir)
 
+    def rename_signals_in_verilog(self, strtop_v, strtop_obf_v):
+        with open(strtop_v, 'r') as tvf:
+            lines = tvf.readlines()
+
+        dictDFFStandard = {}
+        nMaxWire = 0
+        strMaxWire = ''
+        for i in range(len(lines)): # get standard D and Q
+            if('DFFRHQX1 ' in lines[i]):
+                strInstName = lines[i][lines[i].find('DFFRHQX1 ') + len('DFFRHQX1 '): lines[i].find(' ( .D(')]
+                strD = lines[i][lines[i].find(' ( .D(') + len(' ( .D('): lines[i].find('), .CK(')]
+                if(strInstName not in dictDFFStandard.keys()):
+                    dictDFFStandard[strInstName] = {}
+                    dictDFFStandard[strInstName]['D'] = strD
+            if(re.search(r", n[\d]+;", lines[i])):
+                nTemp = int(lines[i][lines[i].rfind(', n')+len(', n'):lines[i].rfind(';')])
+                if(nTemp > nMaxWire):
+                    nMaxWire = nTemp
+                    strMaxWire = 'n'+str(nMaxWire)
+
+        
+        with open(strtop_obf_v, 'r') as tovf:
+            linesobf = tovf.readlines()
+        
+        dictDFFobf = {}
+        for i in range(len(linesobf)): # get standard D and Q
+            if('DFFRHQX1 ' in linesobf[i]):
+                strInstName = linesobf[i][linesobf[i].find('DFFRHQX1 ') + len('DFFRHQX1 '): linesobf[i].find(' ( .D(')]
+                strD = linesobf[i][linesobf[i].find(' ( .D(') + len(' ( .D('): linesobf[i].find('), .CK(')]
+                if(strInstName not in dictDFFobf.keys()):
+                    dictDFFobf[strInstName] = {}
+                    dictDFFobf[strInstName]['D'] = strD
+            if(re.search(r", n[\d]+;", linesobf[i])):
+                nTemp = int(linesobf[i][linesobf[i].rfind(', n')+len(', n'):linesobf[i].rfind(';')])
+                if(nTemp > nMaxWire):
+                    nMaxWire = nTemp
+                    strMaxWire = 'n'+str(nMaxWire)
+
+        listReplace = []
+        listReplaceStandard = []
+        if(len(dictDFFobf) != len(dictDFFStandard)):
+            print("Top and top_obf have different number of DFFs!")
+        else:
+            for inst in dictDFFStandard.keys():
+                listTemp = []
+                if(dictDFFStandard[inst]['D'] != dictDFFobf[inst]['D']):
+                    nMaxWire = nMaxWire + 1
+                    strMaxWire = 'n'+str(nMaxWire)
+                    listTemp = [dictDFFobf[inst]['D'], strMaxWire]
+                    listReplace.append(listTemp)
+                    listTemp = [dictDFFStandard[inst]['D'], strMaxWire]
+                    listReplaceStandard.append(listTemp)
+
+
+        for i in range(len(lines)):
+            for item in listReplaceStandard:
+                strSource = item[0]
+                strDest = item[1]
+                if(' '+strSource+',' in lines[i]):
+                    lines[i] = lines[i].replace(' '+strSource+',', ' '+strDest+',')
+                if(' '+strSource+';' in lines[i]):
+                    lines[i] = lines[i].replace(' '+strSource+';', ' '+strDest+';')
+                if('('+strSource+')' in lines[i]):
+                    lines[i] = lines[i].replace('('+strSource+')', '('+strDest+')')
+                if(' '+strSource+')' in lines[i]):
+                    lines[i] = lines[i].replace(' '+strSource+')', ' '+strDest+')')
+        
+        for i in range(len(linesobf)):
+            for item in listReplace:
+                strSource = item[0]
+                strDest = item[1]
+                if(' '+strSource+',' in linesobf[i]):
+                    linesobf[i] = linesobf[i].replace(' '+strSource+',', ' '+strDest+',')
+                if(' '+strSource+';' in linesobf[i]):
+                    linesobf[i] = linesobf[i].replace(' '+strSource+';', ' '+strDest+';')
+                if('('+strSource+')' in linesobf[i]):
+                    linesobf[i] = linesobf[i].replace('('+strSource+')', '('+strDest+')')
+                if(' '+strSource+')' in linesobf[i]):
+                    linesobf[i] = linesobf[i].replace(' '+strSource+')', ' '+strDest+')')
+
+        with open(strtop_v, 'w') as tvf:
+            for line in lines:
+                tvf.write(line)
+
+        with open(strtop_obf_v, 'w') as tovf:
+            for line in linesobf:
+                tovf.write(line)
+
+
+
+
+
+
+
     def run_compile_dc(self, inputtclfile, outputvpath):
         inputfilename = os.path.split(inputtclfile)[1]
         if('_obf_' in inputfilename):
@@ -723,6 +885,8 @@ class ufm_experiment_flow:
         # status = subprocess.call(cmd, shell=True, executable='/bin/bash')
         strLogFile = os.path.join(self.strIntermediatePath, 'dc_'+strTOPORTOP_OBF+'_log.log')
         strCmd = "dc_shell -f " + newScriptFile + " > " + strLogFile
+        strSource = "source /apps/settings"
+        strCmd = strSource + "&&" + strCmd
         status = os.system(strCmd)
         if(0 == status):
             with open(strLogFile, 'r') as dclf:
@@ -756,12 +920,15 @@ class ufm_experiment_flow:
         listStatus.append(ErrInfo)
         return listStatus, strLogFile
 
-    def convert_verilog_to_bench_by_abc(self, inputfilename, outputvpath):
-        inputfilename = os.path.split(inputfilename)[1]
-        if('_obf_' in inputfilename):
-            strTOPORTOP_OBF = 'top_obf'
+    def convert_verilog_to_bench_by_abc(self, outputvpath, inputfilename=""):
+        if("" != inputfilename):
+            inputfilename = os.path.split(inputfilename)[1]
+            if('_obf_' in inputfilename):
+                strTOPORTOP_OBF = 'top_obf'
+            else:
+                strTOPORTOP_OBF = 'top'
         else:
-            strTOPORTOP_OBF = 'top'
+            strTOPORTOP_OBF = 'top_obf'
 
         with open(self.path_template_get_bench_tcl, 'r') as fgbtcl:
             lines = fgbtcl.readlines()
@@ -803,10 +970,64 @@ class ufm_experiment_flow:
         strOutputFile = os.path.abspath(os.path.join(outputvpath, strTOPORTOP_OBF+'.bench'))
         os.chdir(self.workdir)
 
-        return strOutputFile
+        return strOutputFile, strOriginalVerilogFile
         
+    def get_ports_info_from_v(self, v_file):
+        with open(v_file,'r') as scv:
+            parsed_f = (scv.read()).split(";")
+        
+        dictPorts = {}
+        for i in range(len(parsed_f)):
+            parsed_f[i] += ";"
+            # if(re.search(r"module[\s]+[\w\d\S]*\([\w\d\s,]*\);", parsed_f[i])):
+            if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", parsed_f[i])):
+                strTemp = parsed_f[i][parsed_f[i].find('module')+len('module'):]
+                strTemp = strTemp.strip()
+                strModuleName = strTemp[:strTemp.find('(')]
+                strModuleName = strModuleName.strip()
+                continue
+            #####################################
+            # Match Input
+            #####################################
+            # elif(re.match(r"^([\n\s(\\n)]*)input\s+([\[\]\/\\\w\d\s,]+);$", parsed_f[i])):
+            elif(re.match(r"([\n\s(\\n)]*)input\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+                strLine = parsed_f[i]
+                strLine = strLine[strLine.find('input')+len('input'):]
+                # x = re.findall(r"[\w\d\[\]]+[,;]", strLine)
+                # x = re.findall(r"[\w/\\]*[\w\d\[\]\s]+[,;]", strLine)
+                x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)       
+                for j in x:
+                    tempListPortInfo = [] #[str_name, min_bit, max_bit, int_type] #type:0:input,1:output,2:reg,3:wire
+                    j = re.sub(r",|;", "", j)
+                    j = j.strip()
+                    if(j in dictPorts.keys()):
+                        dictPorts[j][0].append(0)
+                    else:
+                        dictPorts[j] = [[0]]
 
-    def optimize_bench_file(self, benchfile):
+            #####################################
+            # Match Output
+            # Qeustion: Is it possible that some outputs are in the form of bus?
+            #####################################
+            # elif(re.match(r"^([\n\s(\\n)]*)output\s+([\[\]\/\\\w\d\s,]+);$", parsed_f[i])):
+            elif(re.match(r"([\n\s(\\n)]*)output\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+                strLine = parsed_f[i]
+                strLine = strLine[strLine.find('output')+len('output'):]
+                # x = re.findall(r"[\w/\\]*[\w\d\[\]\s]+[,;]", strLine)
+                x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)
+                for j in x:
+                    tempListPortInfo = [] #[str_name, min_bit, max_bit, int_type] #type:0:input,1:output,2:reg,3:wire
+                    j = re.sub(r",|;", "", j)
+                    j = j.strip()
+                    if(j in dictPorts.keys()):
+                        dictPorts[j][0].append(1)
+                    else:
+                        dictPorts[j] = [[1]]
+        
+        return strModuleName, dictPorts
+
+    def optimize_bench_file(self, original_verilog_file, benchfile):
+        strModuleName, dictPorts = self.get_ports_info_from_v(original_verilog_file)
         with open(benchfile, 'r') as bf:
             lines = bf.readlines()
         listInput = []
@@ -819,6 +1040,9 @@ class ufm_experiment_flow:
             if('OUTPUT(' in lines[i]):
                 strName = lines[i][lines[i].find('OUTPUT(')+len('OUTPUT('):lines[i].find(')')]
                 listOutput.append(strName)
+                # if(strName in dictPorts.keys()):
+                #     if(1 == dictPorts[strName][0][0]):
+                #         listOutput.append(strName)
                 continue
         listInput = sorted(listInput)
         listOutput = sorted(listOutput)
@@ -953,6 +1177,62 @@ class ufm_experiment_flow:
             nReplacement = len(listConflictSubckt)
         return nIter, nReplacement
 
+    def delete_illegal_gates(self, v_file, gatetype):
+        with open(v_file,'r') as vf:
+            lines = vf.readlines()
+
+        if("AND2X1" == gatetype):
+            for i in range(len(lines)):
+                if("AND2X1 " in lines[i]): #   AND2X1 U251149 ( .A(n255502), .B(n255478) );
+                    if(';' not in lines[i]):
+                        continue
+                    elif("), .Y(" not in lines[i]):
+                        lines[i] = '//' + lines[i]
+
+        
+
+        with open(v_file,'w') as vf:
+            for line in lines:
+                vf.write(line)
+
+        return v_file
+
+
+
+    def detect_errors_by_abc(self, strtop_obf_v):
+        nStatus = 0
+        nParsingAndGateStatus = 1
+        while(1 == nParsingAndGateStatus):
+            if(1 == nStatus):
+                break
+            nStatus = 0
+            nParsingAndGateStatus = 0
+            strGatetype = ''
+            strOutputVPath = os.path.split(strtop_obf_v)[0]
+            self.convert_verilog_to_bench_by_abc(strOutputVPath) # original
+            strlogfile = os.path.join(self.strIntermediatePath, 'abc_' + 'top_obf' + '_log.log')
+            with open(strlogfile, 'r') as lf:
+                lines = lf.readlines()
+            
+            for line in lines:
+                if('contains combinational loop!' in line):
+                    nStatus = 1
+                    break
+                if(('Parsing of gate ' in line) and (' has failed.' in line)): # Parsing of gate AND2X1 has failed.
+                    nParsingAndGateStatus = 1
+                    strGatetype = line[line.find('Parsing of gate ') + len('Parsing of gate '):line.find(' has failed.')]
+
+            if("" == strGatetype):
+                nParsingAndGateStatus = 0
+            if(1 == nStatus):
+                return nStatus
+            elif(1 == nParsingAndGateStatus):
+                self.delete_illegal_gates(strtop_obf_v, strGatetype)
+
+
+
+        return nStatus
+
 
     def find_dc_timing_warnings(self, dc_log):
         listTempDeleteSubckt = []
@@ -1045,7 +1325,7 @@ class ufm_experiment_flow:
 
         
         
-def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout=0, nTotalCircuitNum=-1, listFinish=[], strDefaultArea="DefaultArea"):
+def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout=0, nTotalCircuitNum=-1, listFinish=[], strDefaultArea="DefaultArea", nPerformSATAttack=False, bSeq=True):
     nOriginalRequiredReplacement = nReplacement
     nOldReplacement = nReplacement
     nReplaceRegularSubckt = 0
@@ -1102,13 +1382,6 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
                 strNewName = 'replace_'+str(nActuralReplaceSubckt)+strRenameSuffix
             strNewPath = os.path.join(strIntermediatePath_Iter, strNewName)
 
-            # for item in listFinish:
-            #     if(strFinish in item):
-            #         nCount = nCount + 1
-            # strRenameSuffix = "_old_" + str(nCount)
-            # strIntermediatePath = os.path.split(uef.strRecordFile)[0]
-            # strIntermediatePath = os.path.join(strIntermediatePath, 'iter'+str(nIter))
-            # strIntermediatePath = os.path.join(strIntermediatePath, 'replace_'+str(nActuralReplaceSubckt))
             os.rename(strOldPath, strNewPath)
             listFinish.append(strFinish+strRenameSuffix)
 
@@ -1120,15 +1393,12 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         listBenchFile = []
         strTempPath = uef.prepare_folders(str(nIter), nReplacement)
         uef.modify_iters_csh(str(nIter), nReplacement)
-        inputtclfile = os.path.join(strTempPath, 'read_'+str(nIter)+'.tcl')
+        inputtclfileOri = os.path.join(strTempPath, 'read_'+str(nIter)+'.tcl')
         outputvpath = strTempPath
-        listStatus, strDC_top_log = uef.run_compile_dc(inputtclfile, outputvpath)
+        listStatus, strDC_top_log = uef.run_compile_dc(inputtclfileOri, outputvpath)
         if(1 == listStatus[0]):
             print(listStatus[1])
             return nTimeout, nReplacement, listFinish
-        benchfile = uef.convert_verilog_to_bench_by_abc(inputtclfile, outputvpath) # original
-        benchfile = uef.optimize_bench_file(benchfile)
-        listBenchFile.append(benchfile)
 
 
         inputtclfile = os.path.join(strTempPath, 'read_obf_'+str(nIter)+'.tcl')
@@ -1164,12 +1434,32 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
                 print(listStatus[1])
                 return nTimeout, nActReplace, listFinish
             listTempDeleteSubckt = uef.find_dc_timing_warnings(strDC_top_obf_log)
-            if(0 == len(listTempDeleteSubckt)):      
+            CombLoopStatus = 0
+            if(True == bSeq):
+                listTempDeleteSubckt = []
+                strtop_v = os.path.join(outputvpath,'top.v')
+                strtop_obf_v = os.path.join(outputvpath,'top_obf.v')
+                uef.rename_signals_in_verilog(strtop_v, strtop_obf_v)
+                CombLoopStatus = uef.detect_errors_by_abc(strtop_obf_v)
+            if((0 == len(listTempDeleteSubckt)) and (0 == CombLoopStatus)):      
                 dictTemp[strKey].append("Good")
                 # needkickonesubckt = 0
                 if(nReplacement == nActuralReplaceSubckt):
                     flagbreak = 1
                     break
+                nMinError = nActuralReplaceSubckt+1
+                strMinErrorKey = "iter"+str(nIter)+"_replace"+str(nActuralReplaceSubckt+1)
+                for key in dictTemp.keys():
+                    if("Error" == dictTemp[key][-1]):
+                        nLength = int(key[key.find('replace')+len('replace'):])
+                        if(nLength < nReplacement):
+                            continue
+                        elif(nLength < nMinError):
+                            nMinError = nLength
+                            strMinErrorKey = key
+                nReplacement = nMinError
+                continue
+                
             else:
                 needkickonesubckt = 1
                 dictTemp[strKey].append("Error")
@@ -1230,22 +1520,31 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
                 else:
                     nReplacement = math.ceil((nMinError+nMaxGood)/2)
                     if(nReplacement == nMinError):
-                        if(("" != strMaxGoodKey) and (dictTemp[strMinErrorKey][-2] not in dictTemp[strMaxGoodKey])):
+                        if("" != strMaxGoodKey):
+                            if(dictTemp[strMinErrorKey][-2] not in dictTemp[strMaxGoodKey]):
+                                uef.listDeleteSubckt.append(dictTemp[strMinErrorKey][-2])
+                        elif(1 == nMinError):
                             uef.listDeleteSubckt.append(dictTemp[strMinErrorKey][-2])
                     
         if(0 != listStatus[0]):
             print(listStatus[1])
             return nTimeout, nActReplace, listFinish
-        benchfile = uef.convert_verilog_to_bench_by_abc(inputtclfile, outputvpath) # obf
-        benchfile = uef.optimize_bench_file(benchfile)
+        
+        benchfileOri, strOriginalVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfileOri) # original
+        benchfileOri = uef.optimize_bench_file(strOriginalVerilogFile, benchfileOri)
+        listBenchFile.append(benchfileOri)
+
+        benchfile, strOriginalVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfile) # obf
+        benchfile = uef.optimize_bench_file(strOriginalVerilogFile, benchfile)
         listBenchFile.append(benchfile)
 
         uef.dictSubCktRecordTotal[strKey] = uef.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
-        SAToutputlog, nTimeout = uef.sat_attack(listBenchFile, strTempPath, SATtimeout)
-        strBenchName = os.path.split(strDataRoot)[1]
-        strArea = uef.get_area_from_dc_log_file(strDC_top_obf_log)
-        strOverhead = '=(' + strArea + '-' + strDefaultArea + ')/' + strDefaultArea
-        uef.read_sat_log_results(SAToutputlog, strBenchName, nIter, nReplacement, strOverhead, nTotalGates)
+        if(True == nPerformSATAttack):
+            SAToutputlog, nTimeout = uef.sat_attack(listBenchFile, strTempPath, SATtimeout)
+            strBenchName = os.path.split(strDataRoot)[1]
+            strArea = uef.get_area_from_dc_log_file(strDC_top_obf_log)
+            strOverhead = '=(' + strArea + '-' + strDefaultArea + ')/' + strDefaultArea
+            uef.read_sat_log_results(SAToutputlog, strBenchName, nIter, nReplacement, strOverhead, nTotalGates)
 
 
 
@@ -1293,53 +1592,7 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
                 if('iter'+str(nIter)+'_replace1' in uef.dictSubCktRecordTotal.keys()):
                     uef.listDeleteSubckt.append(uef.dictSubCktRecordTotal['iter'+str(nIter)+'_replace1'][-2])
                 nReplacement = 1
-        # ====================================================
-
-
-
-        # if(False == uef.delete_conflict_sub_ckt):
-        #     uef.dictConflictSubCktRecord[strKey].append('Good')
-        #     if(nOriginalRequiredReplacement == nActuralReplaceSubckt):
-        #         break
-        #     else:
-        #         uef.listCorrectSubckt = copy.deepcopy(uef.dictConflictSubCktRecord[strKey])
-        #         uef.listCorrectSubckt.remove('Good')
-        #         nTemp = -1
-        #         nMinErrReplace = nOldReplacement
-        #         nMaxGoodReplace = 0
-        #         for key in uef.dictConflictSubCktRecord.keys():
-        #             nTemp = key[key.find('_'):]
-        #             nTemp = int(nTemp.replace('_replace',''))
-        #             if(uef.dictConflictSubCktRecord[key][-1] == 'MatchError'):
-        #                 if(nTemp < nMinErrReplace):
-        #                     nMinErrReplace = nTemp
-        #             elif(uef.dictConflictSubCktRecord[key][-1] == 'Good'):
-        #                 if(nTemp > nMaxGoodReplace):
-        #                     nMaxGoodReplace = nTemp
-        #         if(uef.kickone == 0):
-        #             nReplacement = math.ceil((nMinErrReplace+nMaxGoodReplace)/2)
-        #         else:
-        #             nReplacement = nMinErrReplace
-        #             uef.kickone = 0
-        # else:
-        #     uef.dictConflictSubCktRecord[strKey].append('MatchError')
-        #     strTemp = ""
-        #     nMaxLength = -1
-        #     for key in uef.dictConflictSubCktRecord.keys():
-        #         if('Good' == uef.dictConflictSubCktRecord[key][-1]):
-        #             if((len(uef.dictConflictSubCktRecord[key])-1) > nMaxLength):
-        #                 strTemp = key
-        #                 nMaxLength = len(uef.dictConflictSubCktRecord[key])-1
-            
-        #     if("" != strTemp):
-        #         if((len(uef.dictConflictSubCktRecord[strTemp])-1) + 1 < (len(uef.dictConflictSubCktRecord[strKey])-1)):
-        #             nReplacement = nMaxLength + math.ceil((len(uef.dictConflictSubCktRecord[strKey])-len(uef.dictConflictSubCktRecord[strTemp]))/2)
-        #         else:
-        #             uef.listDeleteSubckt.append(uef.dictConflictSubCktRecord[strKey][-2])
-        #     else:
-        #         if('iter'+str(nIter)+'_replace1' in uef.dictConflictSubCktRecord.keys()):
-        #             uef.listDeleteSubckt.append(uef.dictConflictSubCktRecord['iter'+str(nIter)+'_replace1'][-2])
-        #         nReplacement = 1
+        
 
     return nTimeout, nActReplace, listFinish
     
@@ -1353,7 +1606,10 @@ def get_total_circuit_in_iter(iterfolder, nIter):
         with open(strCircuitInfoFile, 'r') as cif:
             line = cif.readline()
         line = line.strip('\n')
-        nTotalCircuitNum = int(line[line.find(', Sub ckt: ')+len(', Sub ckt: '):]) # Iteration: 8, Sub ckt: 17
+        if(', DFF: ' in line):
+            nTotalCircuitNum = int(line[line.find(', Sub ckt: ')+len(', Sub ckt: '):line.find(', DFF: ')]) # Iteration: 0, Sub ckt: 91, DFF: 0
+        else:
+            nTotalCircuitNum = int(line[line.find(', Sub ckt: ')+len(', Sub ckt: '):]) # Iteration: 8, Sub ckt: 17
 
 
     if(False != os.path.exists(strConflictSubcircuitFile)):
@@ -1370,17 +1626,20 @@ def get_total_circuit_in_iter(iterfolder, nIter):
 
 if __name__ == '__main__':
     strDataRoot = '/home/UFAD/guor/experiment_data/UFM/Circuit_Partition_Tool_data/arbiter_20230104040630_ms0_af_5804'
-    strRTL_LUTRoot = '/home/UFAD/guor/intermediate_data_files/MyDemo/UFM/rtl'
+    strRTL_LUTRoot = '/home/UFAD/guor/CouldBeRemove/MyDemo/UFM/rtl'
+    strOutputDir = '/home/UFAD/guor/intermediate_data_files/UFM'
+    nPerformSATAttack = True
+    bSeq = True
     if(False == os.path.exists(strRTL_LUTRoot)):
         os.makedirs(strRTL_LUTRoot)
     strtime = time.strftime("%Y%m%d%H%M%S", time.localtime())
     
 
-    nRunMode = 1 #0, 1, 2
+    nRunMode = 0 #0, 1, 2
     nIter = 0
     nMaxReplacement = 100
     nMinReplacement = 1
-    nReplacement = 100
+    nReplacement = 5
     strDefaultArea = "1"
 
     # arbiter: 5758.6
@@ -1399,7 +1658,12 @@ if __name__ == '__main__':
     parser.add_argument("-r", action="store", required=False, type=str, help="replace number")
     parser.add_argument("-o", action="store", required=False, type=str, help="output dir")
     parser.add_argument("-a", action="store", required=False, type=str, help="default area")
+    parser.add_argument("-l", action="store", required=False, type=str, help="list of replace, use '-' to separate, e.g. 5-10-15")
+    parser.add_argument("-maxr", action="store", required=False, type=str, help="nMaxReplacement, default 100")
     args = parser.parse_args()
+    
+    listReplacement = [5,10,15,20,25,30]
+
     if(None != args.d):
         strDataRoot = args.d
     if(None != args.m):
@@ -1410,10 +1674,16 @@ if __name__ == '__main__':
         nReplacement = int(args.r)
     if(None != args.o):
         strOutputDir = args.o
-    else:
-        strOutputDir = os.path.split(strDataRoot)[0]
     if(None != args.a):
         strDefaultArea = args.a
+    if(None != args.l):
+        strTemp = args.l
+        listReplacement = strTemp.split("-")
+        for i in range(len(listReplacement)):
+            listReplacement[i] = int(listReplacement[i])
+    if(None != args.maxr):
+        nMaxReplacement = int(args.maxr)
+
     
     strBenchName = os.path.split(strDataRoot)[1]
     strBenchName = strBenchName[:strBenchName.find('_')]
@@ -1429,7 +1699,7 @@ if __name__ == '__main__':
     file_name_list = os.listdir(strItersRoot)
     nTimeoutLimit = 86400 # s, 24hr
 
-    listReplacement = [5,10,15,20,25,30]
+    
     # listReplacement = [20,30]
 
     
@@ -1455,7 +1725,7 @@ if __name__ == '__main__':
     if(0 == nRunMode):
         uef = ufm_experiment_flow(strDataRoot, strRecordFile, strRTL_LUTRoot)
         # nTotalCircuitNum, nConflictCircuitNum = get_total_circuit_in_iter(os.path.join(strItersRoot, iter+str(nIter)), nIter)
-        nSATtimeoutStatus, nReplacement, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea)
+        nSATtimeoutStatus, nReplacement, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack, bSeq)
     #==============================run one time======================
     
     # #==============================run cycles======================
@@ -1467,7 +1737,8 @@ if __name__ == '__main__':
                 print("Iter"+str(nIter)+":"+str(nTotalCircuitNum)+" subckts, "+str(nConflictCircuitNum)+" conflict sub-circuits.")
                 uef = ufm_experiment_flow(strDataRoot, strRecordFile, strRTL_LUTRoot)
                 for nReplacement in listReplacement:
-                    nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea)
+                    # nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack)
+                    nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack, bSeq)
                     if(nActReplace < nReplacement):
                         print("Cannot replace more subckts! Only %d subckt(s) could be used in iter%d!" % (nActReplace,nIter))
                         break
@@ -1475,7 +1746,8 @@ if __name__ == '__main__':
         else:
             for nReplacement in listReplacement:
                 uef = ufm_experiment_flow(strDataRoot, strRecordFile, strRTL_LUTRoot)
-                nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea)
+                # nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack)
+                nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack, bSeq)
                 if(nActReplace < nReplacement):
                     print("Cannot replace more subckts! Only %d subckt(s) could be used in iter%d!" % (nActReplace,nIter))
                     break
@@ -1504,7 +1776,8 @@ if __name__ == '__main__':
                 print("replace_%d is closest to 24 hrs." % nMinReplacement)
                 break
             # nTotalCircuitNum, nConflictCircuitNum = get_total_circuit_in_iter(os.path.join(strItersRoot, iter+str(nIter)), nIter)
-            nSATtimeoutStatus, nReplacement = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea)
+            # nSATtimeoutStatus, nReplacement = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack)
+            nSATtimeoutStatus, nReplacement, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack, bSeq)
             dictFinish[nReplacement] = nSATtimeoutStatus
             if(1 == nSATtimeoutStatus):
                 nMaxReplacement = nReplacement
@@ -1527,4 +1800,4 @@ if __name__ == '__main__':
                     if(nIter == int(args.i)):
                         if((None != args.r) and (nReplacement < int(args.r))):
                             continue
-                    nSATtimeoutStatus, nReplacement, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea)
+                    nSATtimeoutStatus, nReplacement, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack)
