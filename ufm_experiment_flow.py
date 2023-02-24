@@ -920,6 +920,66 @@ class ufm_experiment_flow:
         listStatus.append(ErrInfo)
         return listStatus, strLogFile
 
+    def rename_verilog_for_RANE_attack(self, ori_v, obf_v, nIter, nReplacement):
+        strNewOriVerilog = ""
+        strNewObfVerilog = ""
+        strFolder = os.path.split(ori_v)[0]
+        # [\w\d]*/iter[\d]+/replace_[\d]+
+        # pattern = re.compile(r'[\w\d]*\/iter[\d]+\/replace_[\d]+')
+        # # str = u''
+        # res = pattern.search(strFolder)
+        # if(res != None):
+        #     strTemp = re.search(r"\_[\d]+\/", res)
+        #     strModuleName = res[:res.find(strTemp)]
+        #     strModuleName = strModuleName[strModuleName.rfind('_') + len('_'):]
+        if(re.search(r"[\w\d]*\/iter[\d]+\/replace\_[\d]+", strFolder)):
+            strLine = strFolder
+            x = re.findall(r"[\w\d]*\/iter[\d]+\/replace_[\d]+", strLine)       
+            for j in x:
+                strTemp = re.findall(r"\_[\d]+\/", j)[0]
+                strModuleName = j[:j.find(strTemp)]
+                strModuleName = strModuleName[strModuleName.rfind('_') + len('_'):]
+
+        strNewOriVModule = strModuleName + '_i' + str(nIter) + '_r' + str(nReplacement)
+        strNewObfVModule = strNewOriVModule + '_obf'
+        strNewOriVName = strNewOriVModule + '.v'
+        strNewObfVName = strNewObfVModule + '.v'
+        strNewOriVerilog = os.path.join(strFolder, strNewOriVName)
+        strNewObfVerilog = os.path.join(strFolder, strNewObfVName)
+
+        with open(ori_v, 'r') as ovf:
+            lines = ovf.readlines()
+        for i in range(len(lines)):
+            if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", lines[i])):
+                strTemp = lines[i][lines[i].find('module')+len('module'):]
+                strTemp = strTemp.strip()
+                strTemp = strTemp[:strTemp.find('(')]
+                strTemp = strTemp.strip()
+                lines[i] = lines[i].replace(strTemp, strNewOriVModule)
+                break
+        with open(strNewOriVerilog, 'w') as novf:
+            for line in lines:
+                novf.write(line)
+        
+
+        with open(obf_v, 'r') as obvf:
+            lines = obvf.readlines()
+        for i in range(len(lines)):
+            if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", lines[i])):
+                strTemp = lines[i][lines[i].find('module')+len('module'):]
+                strTemp = strTemp.strip()
+                strTemp = strTemp[:strTemp.find('(')]
+                strTemp = strTemp.strip()
+                lines[i] = lines[i].replace(strTemp, strNewObfVModule)
+                break
+        with open(strNewObfVerilog, 'w') as nobvf:
+            for line in lines:
+                nobvf.write(line)
+
+        
+
+        return strNewOriVerilog, strNewObfVerilog
+
     def convert_verilog_to_bench_by_abc(self, outputvpath, inputfilename=""):
         if("" != inputfilename):
             inputfilename = os.path.split(inputfilename)[1]
@@ -1325,7 +1385,7 @@ class ufm_experiment_flow:
 
         
         
-def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout=0, nTotalCircuitNum=-1, listFinish=[], strDefaultArea="DefaultArea", nPerformSATAttack=False, bSeq=True):
+def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout=0, nTotalCircuitNum=-1, listFinish=[], strDefaultArea="DefaultArea", nPerformSATAttack=0, bSeq=True):
     nOriginalRequiredReplacement = nReplacement
     nOldReplacement = nReplacement
     nReplaceRegularSubckt = 0
@@ -1534,12 +1594,14 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         benchfileOri = uef.optimize_bench_file(strOriginalVerilogFile, benchfileOri)
         listBenchFile.append(benchfileOri)
 
-        benchfile, strOriginalVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfile) # obf
-        benchfile = uef.optimize_bench_file(strOriginalVerilogFile, benchfile)
+        benchfile, strObfVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfile) # obf
+        benchfile = uef.optimize_bench_file(strObfVerilogFile, benchfile)
         listBenchFile.append(benchfile)
 
+        strRenamedOriVerilog, strRenamedObfVerilog = uef.rename_verilog_for_RANE_attack(strOriginalVerilogFile, strObfVerilogFile, nIter, nReplacement)
+
         uef.dictSubCktRecordTotal[strKey] = uef.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
-        if(True == nPerformSATAttack):
+        if(1 == nPerformSATAttack):
             SAToutputlog, nTimeout = uef.sat_attack(listBenchFile, strTempPath, SATtimeout)
             strBenchName = os.path.split(strDataRoot)[1]
             strArea = uef.get_area_from_dc_log_file(strDC_top_obf_log)
@@ -1628,7 +1690,7 @@ if __name__ == '__main__':
     strDataRoot = '/home/UFAD/guor/experiment_data/UFM/Circuit_Partition_Tool_data/arbiter_20230104040630_ms0_af_5804'
     strRTL_LUTRoot = '/home/UFAD/guor/CouldBeRemove/MyDemo/UFM/rtl'
     strOutputDir = '/home/UFAD/guor/intermediate_data_files/UFM'
-    nPerformSATAttack = True
+    nPerformSATAttack = 0
     bSeq = True
     if(False == os.path.exists(strRTL_LUTRoot)):
         os.makedirs(strRTL_LUTRoot)
@@ -1660,6 +1722,7 @@ if __name__ == '__main__':
     parser.add_argument("-a", action="store", required=False, type=str, help="default area")
     parser.add_argument("-l", action="store", required=False, type=str, help="list of replace, use '-' to separate, e.g. 5-10-15")
     parser.add_argument("-maxr", action="store", required=False, type=str, help="nMaxReplacement, default 100")
+    parser.add_argument("-atk", action="store", required=False, type=int, help="perform SAT attack or not")
     args = parser.parse_args()
     
     listReplacement = [5,10,15,20,25,30]
@@ -1683,6 +1746,8 @@ if __name__ == '__main__':
             listReplacement[i] = int(listReplacement[i])
     if(None != args.maxr):
         nMaxReplacement = int(args.maxr)
+    if(None != args.atk):
+        nPerformSATAttack = args.atk
 
     
     strBenchName = os.path.split(strDataRoot)[1]
