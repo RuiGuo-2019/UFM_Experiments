@@ -1030,7 +1030,7 @@ class ufm_experiment_flow:
         strOutputFile = os.path.abspath(os.path.join(outputvpath, strTOPORTOP_OBF+'.bench'))
         os.chdir(self.workdir)
 
-        return strOutputFile, strOriginalVerilogFile
+        return status, strOutputFile, strOriginalVerilogFile
         
     def get_ports_info_from_v(self, v_file):
         with open(v_file,'r') as scv:
@@ -1269,7 +1269,9 @@ class ufm_experiment_flow:
             nParsingAndGateStatus = 0
             strGatetype = ''
             strOutputVPath = os.path.split(strtop_obf_v)[0]
-            self.convert_verilog_to_bench_by_abc(strOutputVPath) # original
+            nStatus, benchfileOri, strOriginalVerilogFile = self.convert_verilog_to_bench_by_abc(strOutputVPath) # original
+            if(0 != nStatus):
+                nStatus = 1
             strlogfile = os.path.join(self.strIntermediatePath, 'abc_' + 'top_obf' + '_log.log')
             with open(strlogfile, 'r') as lf:
                 lines = lf.readlines()
@@ -1590,11 +1592,11 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
             print(listStatus[1])
             return nTimeout, nActReplace, listFinish
         
-        benchfileOri, strOriginalVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfileOri) # original
+        abcstatus, benchfileOri, strOriginalVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfileOri) # original
         benchfileOri = uef.optimize_bench_file(strOriginalVerilogFile, benchfileOri)
         listBenchFile.append(benchfileOri)
 
-        benchfile, strObfVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfile) # obf
+        abcstatus, benchfile, strObfVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfile) # obf
         benchfile = uef.optimize_bench_file(strObfVerilogFile, benchfile)
         listBenchFile.append(benchfile)
 
