@@ -24,8 +24,9 @@ class ufm_experiment_flow:
         self.path_template_modify_top_plx = os.path.join(self.workdir, 'modify_top.plx')
         self.path_template_run_compile_dc_tcl = os.path.join(self.workdir, 'run_compile_dc.tcl')
         self.path_template_get_bench_tcl = os.path.join(self.workdir, 'get_bench.tcl')
-        self.subckt_list_file_name = '_recommend_sub_ckt.txt'
+        # self.subckt_list_file_name = '_recommend_sub_ckt.txt'
         # self.subckt_list_file_name = '_conflict_subckt.txt'
+        self.subckt_list_file_name = '_recommend_sub_ckt_only_conflict.txt'
         self.strDataRoot = strDataRoot
         self.strScriptsRoot = os.path.split(self.strDataRoot)[0]
         self.strDataRootName = os.path.split(self.strDataRoot)[1]
@@ -81,10 +82,10 @@ class ufm_experiment_flow:
             print("===ERROR: Cannot generate read_%s.tcl!===" % strIterNum)
         os.chdir(self.workdir)
 
-    def resort_conflict_subckt(self, listConflictSubCkt, listSubcktInfo, nSortMode=0): #Resort conflict subckt from small to large, nSortMode = 0-by input 
+    def resort_conflict_subckt(self, listConflictSubCkt, listSubcktInfo, nSortMode=0): #0-Resort conflict subckt by input from low to high, 1-don't change
         listNewOrderConflictSubCkt = []
         listNewConflictSubCktInfo = []
-        if(0 == nSortMode):
+        if(0 == nSortMode): # input# from low to high
             for conflictsubckt in listConflictSubCkt:
                 conflictsubckt = conflictsubckt.strip()
                 conflictsubckt = conflictsubckt.replace('\n','')
@@ -114,7 +115,7 @@ class ufm_experiment_flow:
         
             for item in listNewConflictSubCktInfo:
                 listNewOrderConflictSubCkt.append(item[0][:item[0].find('\t')])
-        elif(1 == nSortMode): # 1-score from high to low
+        elif(1 == nSortMode): # do not change the order
             for conflictsubckt in listConflictSubCkt:
                 conflictsubckt = conflictsubckt.strip()
                 conflictsubckt = conflictsubckt.replace('\n','')
@@ -155,8 +156,12 @@ class ufm_experiment_flow:
 
         if('_recommend_sub_ckt.txt' in strIterOrderFile):
             listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1)
+        elif('_recommend_sub_ckt_only_conflict.txt' in strIterOrderFile):
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1)
         elif('_conflict_subckt.txt' in strIterOrderFile):
             listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=0)
+        else:
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1) # don't change order
 
         listReplaceOrder = []
         strKey = 'iter'+strIterNum+'_replace'+str(intReplacement)
