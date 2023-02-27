@@ -24,9 +24,10 @@ class ufm_experiment_flow:
         self.path_template_modify_top_plx = os.path.join(self.workdir, 'modify_top.plx')
         self.path_template_run_compile_dc_tcl = os.path.join(self.workdir, 'run_compile_dc.tcl')
         self.path_template_get_bench_tcl = os.path.join(self.workdir, 'get_bench.tcl')
-        # self.subckt_list_file_name = '_recommend_sub_ckt.txt'
+        listCktOrderFile = ['_conflict_subckt.txt', '_recommend_sub_ckt.txt', '_recommend_sub_ckt_only_conflict.txt']
         # self.subckt_list_file_name = '_conflict_subckt.txt'
-        self.subckt_list_file_name = '_recommend_sub_ckt_only_conflict.txt'
+        # self.subckt_list_file_name = '_recommend_sub_ckt.txt'
+        self.subckt_list_file_name = listCktOrderFile[1]
         self.strDataRoot = strDataRoot
         self.strScriptsRoot = os.path.split(self.strDataRoot)[0]
         self.strDataRootName = os.path.split(self.strDataRoot)[1]
@@ -154,12 +155,12 @@ class ufm_experiment_flow:
         # del(subcktinfo[0])
         # del(subcktinfo[0])
 
-        if('_recommend_sub_ckt.txt' in strIterOrderFile):
-            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1)
+        if('_conflict_subckt.txt' in strIterOrderFile):
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=0)   
         elif('_recommend_sub_ckt_only_conflict.txt' in strIterOrderFile):
             listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1)
-        elif('_conflict_subckt.txt' in strIterOrderFile):
-            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=0)
+        elif('_recommend_sub_ckt.txt' in strIterOrderFile):
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1)
         else:
             listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1) # don't change order
 
@@ -1330,7 +1331,7 @@ class ufm_experiment_flow:
 
         
         
-def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout=0, nTotalCircuitNum=-1, listFinish=[], strDefaultArea="DefaultArea", nPerformSATAttack=False, bSeq=True):
+def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout=0, nTotalCircuitNum=-1, listFinish=[], strDefaultArea="DefaultArea", nPerformSATAttack=0, bSeq=True):
     nOriginalRequiredReplacement = nReplacement
     nOldReplacement = nReplacement
     nReplaceRegularSubckt = 0
@@ -1544,7 +1545,7 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         listBenchFile.append(benchfile)
 
         uef.dictSubCktRecordTotal[strKey] = uef.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
-        if(True == nPerformSATAttack):
+        if(1 == nPerformSATAttack):
             SAToutputlog, nTimeout = uef.sat_attack(listBenchFile, strTempPath, SATtimeout)
             strBenchName = os.path.split(strDataRoot)[1]
             strArea = uef.get_area_from_dc_log_file(strDC_top_obf_log)
@@ -1633,7 +1634,7 @@ if __name__ == '__main__':
     strDataRoot = '/home/UFAD/guor/experiment_data/UFM/Circuit_Partition_Tool_data/arbiter_20230104040630_ms0_af_5804'
     strRTL_LUTRoot = '/home/UFAD/guor/CouldBeRemove/MyDemo/UFM/rtl'
     strOutputDir = '/home/UFAD/guor/intermediate_data_files/UFM'
-    nPerformSATAttack = True
+    nPerformSATAttack = 1
     bSeq = True
     if(False == os.path.exists(strRTL_LUTRoot)):
         os.makedirs(strRTL_LUTRoot)
@@ -1665,6 +1666,7 @@ if __name__ == '__main__':
     parser.add_argument("-a", action="store", required=False, type=str, help="default area")
     parser.add_argument("-l", action="store", required=False, type=str, help="list of replace, use '-' to separate, e.g. 5-10-15")
     parser.add_argument("-maxr", action="store", required=False, type=str, help="nMaxReplacement, default 100")
+    parser.add_argument("-atk", action="store", required=False, type=int, help="perform SAT attack or not")
     args = parser.parse_args()
     
     listReplacement = [5,10,15,20,25,30]
@@ -1688,6 +1690,8 @@ if __name__ == '__main__':
             listReplacement[i] = int(listReplacement[i])
     if(None != args.maxr):
         nMaxReplacement = int(args.maxr)
+    if(None != args.atk):
+        nPerformSATAttack = args.atk
 
     
     strBenchName = os.path.split(strDataRoot)[1]
