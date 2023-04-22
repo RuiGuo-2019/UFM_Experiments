@@ -936,9 +936,13 @@ class ufm_experiment_flow:
             strLine = strFolder
             x = re.findall(r"[\w\d]*\/iter[\d]+\/replace_[\d]+", strLine)       
             for j in x:
+                # strTemp = re.findall(r"\_[\d]+\/", j)[0]
+                # strModuleName = j[:j.find(strTemp)]
+                # strModuleName = strModuleName[strModuleName.rfind('_') + len('_'):]
                 strTemp = re.findall(r"\_[\d]+\/", j)[0]
-                strModuleName = j[:j.find(strTemp)]
-                strModuleName = strModuleName[strModuleName.rfind('_') + len('_'):]
+                strTemp = strTemp.replace('/', '')
+                strModuleName = j[:j.find(strTemp) + len(strTemp)]
+                strModuleName = strModuleName[strModuleName.find('intermediate_files_') + len('intermediate_files_'):]
 
         strNewOriVModule = strModuleName + '_i' + str(nIter) + '_r' + str(nReplacement)
         strNewObfVModule = strNewOriVModule + '_obf'
@@ -1384,6 +1388,40 @@ class ufm_experiment_flow:
         return subcktinfo
 
 
+def replace_slash_and_back_slash(v_file, str_back_slash, str_slash):
+    with open(v_file, 'r') as vf:
+        listContent = vf.readlines()
+
+    for i in range(len(listContent)):
+        if('//' == listContent[i][0:2]):
+            continue
+        else:
+            listContent[i] = listContent[i].replace('\\', str_back_slash)
+            listContent[i] = listContent[i].replace('/', str_slash)
+    
+    with open(v_file, 'w') as vf:
+        for line in listContent:
+            vf.write(line)
+
+    return v_file
+
+def rename_module_name(v_file, iter, replace):
+    with open(v_file, 'r') as vf:
+        lines = vf.readlines()
+    
+    # v_file = /home/UFAD/guor/intermediate_data_files/UFM/intermediate_files_b02_20230420015649/iter0/replace_1/top.v
+    str_obf = os.path.split(v_file)[1]
+    if('_obf' in str_obf):
+        str_obf = '_obf'
+    else:
+        str_obf = ''
+    strReplace = 'r'+os.path.split(os.path.split(v_file)[0])[1].replace('replace_','')
+    strIter = 'i' + os.path.split(os.path.split(os.path.split(v_file)[0])[0])[1].replace('iter','')
+    strModuleNew = os.path.split(os.path.split(os.path.split(os.path.split(v_file)[0])[0])[0])[1]
+    strModuleNew = strModuleNew[strModuleNew.find('intermediate_files_')+len('intermediate_files_'):]
+
+    strModuleNew = strModuleNew + '_' + strIter + '_' + strReplace + str_obf
+    
 
         
         
@@ -1501,8 +1539,12 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
                 listTempDeleteSubckt = []
                 strtop_v = os.path.join(outputvpath,'top.v')
                 strtop_obf_v = os.path.join(outputvpath,'top_obf.v')
-                uef.rename_signals_in_verilog(strtop_v, strtop_obf_v)
-                CombLoopStatus = uef.detect_errors_by_abc(strtop_obf_v)
+                # uef.rename_signals_in_verilog(strtop_v, strtop_obf_v)
+                # CombLoopStatus = uef.detect_errors_by_abc(strtop_obf_v)
+
+                CombLoopStatus = 0
+                replace_slash_and_back_slash(strtop_v, str_back_slash='_bs_', str_slash='_s_')
+                replace_slash_and_back_slash(strtop_obf_v, str_back_slash='_bs_', str_slash='_s_')
             if((0 == len(listTempDeleteSubckt)) and (0 == CombLoopStatus)):      
                 dictTemp[strKey].append("Good")
                 # needkickonesubckt = 0
@@ -1601,6 +1643,8 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         listBenchFile.append(benchfile)
 
         strRenamedOriVerilog, strRenamedObfVerilog = uef.rename_verilog_for_RANE_attack(strOriginalVerilogFile, strObfVerilogFile, nIter, nReplacement)
+        # replace_slash_and_back_slash(strRenamedOriVerilog, str_back_slash='_bs_', str_slash='_s_')
+        # replace_slash_and_back_slash(strRenamedObfVerilog, str_back_slash='_bs_', str_slash='_s_')
 
         uef.dictSubCktRecordTotal[strKey] = uef.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
         if(1 == nPerformSATAttack):
