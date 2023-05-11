@@ -2,10 +2,10 @@
 iter=ITERNUM
 subcircuit=STRCIRCUITDATAFOLDER
 replacement=REPLACEMENTNUM
-sed -i 's/\[/_/g' $subcircuit/sub_circuit/iter$iter/sub_ckt_*/sub_ckt_*_minname.v
-sed -i 's/\]/_/g' $subcircuit/sub_circuit/iter$iter/sub_ckt_*/sub_ckt_*_minname.v
-sed -i 's/\]/_/g' $subcircuit/sub_circuit/iter$iter/top.v
-sed -i 's/\[/_/g' $subcircuit/sub_circuit/iter$iter/top.v
+# sed -i 's/\[/_/g' $subcircuit/sub_circuit/iter$iter/sub_ckt_*/sub_ckt_*_minname.v
+# sed -i 's/\]/_/g' $subcircuit/sub_circuit/iter$iter/sub_ckt_*/sub_ckt_*_minname.v
+# sed -i 's/\]/_/g' $subcircuit/sub_circuit/iter$iter/top.v
+# sed -i 's/\[/_/g' $subcircuit/sub_circuit/iter$iter/top.v
 
 # Find all the necessary sub-circuits and top RTLs for the given iteration
 echo "analyze -format sverilog {" > read_$iter.tcl

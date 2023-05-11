@@ -1635,12 +1635,14 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
             return nTimeout, nActReplace, listFinish
         
         abcstatus, benchfileOri, strOriginalVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfileOri) # original
-        benchfileOri = uef.optimize_bench_file(strOriginalVerilogFile, benchfileOri)
-        listBenchFile.append(benchfileOri)
-
         abcstatus, benchfile, strObfVerilogFile = uef.convert_verilog_to_bench_by_abc(outputvpath, inputtclfile) # obf
-        benchfile = uef.optimize_bench_file(strObfVerilogFile, benchfile)
-        listBenchFile.append(benchfile)
+
+        if(1 == nPerformSATAttack):
+            benchfileOri = uef.optimize_bench_file(strOriginalVerilogFile, benchfileOri)
+            listBenchFile.append(benchfileOri)
+  
+            benchfile = uef.optimize_bench_file(strObfVerilogFile, benchfile)
+            listBenchFile.append(benchfile)
 
         strRenamedOriVerilog, strRenamedObfVerilog = uef.rename_verilog_for_RANE_attack(strOriginalVerilogFile, strObfVerilogFile, nIter, nReplacement)
         # replace_slash_and_back_slash(strRenamedOriVerilog, str_back_slash='_bs_', str_slash='_s_')
