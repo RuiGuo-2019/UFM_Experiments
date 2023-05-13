@@ -349,9 +349,9 @@ class ufm_experiment_flow:
                 nfmicsh.write(line)
 
         redactSubcktInfoFile = os.path.join(self.strIntermediatePath, 'RedactSubcktsInfo.txt')
-        strRedactSubcktInfo = strRedactSubcktInfo + str(nTotalGates) + '\n'
+        strRedactSubcktInfo = strRedactSubcktInfo + 'Total Gates: ' + str(nTotalGates) + '\n'
         with open(redactSubcktInfoFile, 'w') as rsif:
-                rsif.write(strRedactSubcktInfo)
+            rsif.write(strRedactSubcktInfo)
         
         
         print("Modify plx file finish.")
@@ -398,7 +398,7 @@ class ufm_experiment_flow:
         
         # self.dictSubCktRecordTotal[strKey] = self.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
 
-        return strKey, self.dictConflictSubCktRecord[strKey], listRegularSubcktRedact, nTotalGates
+        return strKey, self.dictConflictSubCktRecord[strKey], listRegularSubcktRedact, nTotalGates, redactSubcktInfoFile
 
     def rewrite_read_obf_tcl(self, folder, originaltcl, listRedact, strIterNum, LUTFolder):
         filename = os.path.join(folder, 'read_obf_'+strIterNum+'.tcl')
@@ -1330,6 +1330,11 @@ class ufm_experiment_flow:
         
         if(False ==  os.path.exists(strIntermediatePath)):
             os.makedirs(strIntermediatePath)
+        
+        strScript = 'source modify_iters.csh\nperl modify_top.plx\ndc_shell -f run_compile_dc_top.tcl > dc_top_log_s.log\ndc_shell -f run_compile_dc_top_obf.tcl > dc_top_obf_log_s.log\n%s -f get_top_bench.tcl > abc_top_log_s.log\n%s -f get_top_obf_bench.tcl > abc_top_obf_log_s.log' % (self.path_abc, self.path_abc)
+        strScriptFile = os.path.join(strIntermediatePath, 'generate.sh')
+        with open(strScriptFile, 'w') as sf:
+            sf.write(strScript)
         return strIntermediatePath
     
     def get_area_from_dc_log_file(self, dclogfile):
@@ -1386,6 +1391,27 @@ class ufm_experiment_flow:
                 subcktinfo.remove(subckt)
         
         return subcktinfo
+    
+    def get_keylength_from_v(self, v_file):
+        with open(v_file, 'r') as vf:
+            lines = vf.readlines()
+        
+        strTemp = ''
+        for line in lines:
+            if(('input ' in line) and (' keyinput;' in line)):
+                strTemp = line.replace('input ', '')
+                strTemp = strTemp.replace(' keyinput;', '')
+                strTemp = strTemp.strip()
+                if('' == strTemp):
+                    strTemp = '0'
+                else:
+                    strTemp = strTemp.replace('[', '')
+                    strTemp = strTemp[:strTemp.find(':')]
+                break
+
+        return strTemp
+    
+        
 
 
 def replace_slash_and_back_slash(v_file, str_back_slash, str_slash):
@@ -1496,6 +1522,7 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         inputtclfileOri = os.path.join(strTempPath, 'read_'+str(nIter)+'.tcl')
         outputvpath = strTempPath
         listStatus, strDC_top_log = uef.run_compile_dc(inputtclfileOri, outputvpath)
+        strAreaOri = uef.get_area_from_dc_log_file(strDC_top_log)
         if(1 == listStatus[0]):
             print(listStatus[1])
             return nTimeout, nReplacement, listFinish
@@ -1507,7 +1534,7 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         dictTemp = {}
         while(1):
             nReplaceRegularSubckt = nReplacement - nReplacementConflictSubckts
-            strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates = uef.modify_top_plx_by_conflict_order(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
+            strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates, strRedactSubcktInfoFile = uef.modify_top_plx_by_conflict_order(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
             listReplace = listReplaceConflictSubckt+listRegularSubcktRedact
             nActReplace = len(listReplace)
             dictTemp[strKey] = listReplace
@@ -1530,19 +1557,26 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
                 nLastReplacement = nReplacement
                 listLastReplace = copy.deepcopy(listReplace)
             listStatus, strDC_top_obf_log = uef.run_compile_dc(inputtclfile, outputvpath)
+            strtop_v = os.path.join(outputvpath,'top.v')
+            strtop_obf_v = os.path.join(outputvpath,'top_obf.v')
+            strAreaObf = uef.get_area_from_dc_log_file(strDC_top_obf_log)
+            strKeylength = uef.get_keylength_from_v(strtop_obf_v)
+            strAreaFunc = '=(' + strAreaObf + '-' + strAreaOri + ')/' + strAreaOri + '*100'
+            with open(strRedactSubcktInfoFile, 'a') as rsif:
+                rsif.write('\nkeylength: ' + strKeylength + '\n')
+                rsif.write(strAreaFunc)
             if(0 != listStatus[0]):
                 print(listStatus[1])
                 return nTimeout, nActReplace, listFinish
             listTempDeleteSubckt = uef.find_dc_timing_warnings(strDC_top_obf_log)
             CombLoopStatus = 0
             if(True == bSeq):
-                listTempDeleteSubckt = []
-                strtop_v = os.path.join(outputvpath,'top.v')
-                strtop_obf_v = os.path.join(outputvpath,'top_obf.v')
+                # listTempDeleteSubckt = []
+                
                 # uef.rename_signals_in_verilog(strtop_v, strtop_obf_v)
                 # CombLoopStatus = uef.detect_errors_by_abc(strtop_obf_v)
 
-                CombLoopStatus = 0
+                CombLoopStatus = len(listTempDeleteSubckt) # check combinational loop
                 replace_slash_and_back_slash(strtop_v, str_back_slash='_bs_', str_slash='_s_')
                 replace_slash_and_back_slash(strtop_obf_v, str_back_slash='_bs_', str_slash='_s_')
             if((0 == len(listTempDeleteSubckt)) and (0 == CombLoopStatus)):      
