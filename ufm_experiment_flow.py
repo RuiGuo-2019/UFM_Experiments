@@ -1802,7 +1802,7 @@ if __name__ == '__main__':
     parser.add_argument("-r", action="store", required=False, type=str, help="replace number")
     parser.add_argument("-o", action="store", required=False, type=str, help="output dir")
     parser.add_argument("-a", action="store", required=False, type=str, help="default area")
-    parser.add_argument("-l", action="store", required=False, type=str, help="list of replace, use '-' to separate, e.g. 5-10-15")
+    parser.add_argument("-lr", action="store", required=False, type=str, help="list of replace, use '-' to separate, e.g. 5-10-15")
     parser.add_argument("-maxr", action="store", required=False, type=str, help="nMaxReplacement, default 100")
     parser.add_argument("-atk", action="store", required=False, type=int, help="perform SAT attack or not")
     args = parser.parse_args()
@@ -1821,8 +1821,8 @@ if __name__ == '__main__':
         strOutputDir = args.o
     if(None != args.a):
         strDefaultArea = args.a
-    if(None != args.l):
-        strTemp = args.l
+    if(None != args.lr):
+        strTemp = args.lr
         listReplacement = strTemp.split("-")
         for i in range(len(listReplacement)):
             listReplacement[i] = int(listReplacement[i])
