@@ -1407,6 +1407,7 @@ class ufm_experiment_flow:
                 else:
                     strTemp = strTemp.replace('[', '')
                     strTemp = strTemp[:strTemp.find(':')]
+                    strTemp = str(int(strTemp) + 1)
                 break
 
         return strTemp
@@ -1802,12 +1803,14 @@ if __name__ == '__main__':
     parser.add_argument("-r", action="store", required=False, type=str, help="replace number")
     parser.add_argument("-o", action="store", required=False, type=str, help="output dir")
     parser.add_argument("-a", action="store", required=False, type=str, help="default area")
+    parser.add_argument("-li", action="store", required=False, type=str, help="list of iter, use '-' to separate, e.g. 0-1-2")
     parser.add_argument("-lr", action="store", required=False, type=str, help="list of replace, use '-' to separate, e.g. 5-10-15")
     parser.add_argument("-maxr", action="store", required=False, type=str, help="nMaxReplacement, default 100")
     parser.add_argument("-atk", action="store", required=False, type=int, help="perform SAT attack or not")
     args = parser.parse_args()
     
     listReplacement = [5,10,15,20,25,30]
+    listIter = [0,1,2,3]
 
     if(None != args.d):
         strDataRoot = args.d
@@ -1821,6 +1824,11 @@ if __name__ == '__main__':
         strOutputDir = args.o
     if(None != args.a):
         strDefaultArea = args.a
+    if(None != args.li):
+        strTemp = args.li
+        listIter = strTemp.split("-")
+        for i in range(len(listIter)):
+            listIter[i] = int(listIter[i])
     if(None != args.lr):
         strTemp = args.lr
         listReplacement = strTemp.split("-")
@@ -1877,7 +1885,7 @@ if __name__ == '__main__':
     
     # #==============================run cycles======================
     elif(1 == nRunMode):      
-        if(None == args.i):
+        if((None == args.i) and (None == args.li)):
             for nIter in range(len(file_name_list)):
                 strIterFolder = os.path.join(strItersRoot, 'iter'+str(nIter))
                 nTotalCircuitNum, nConflictCircuitNum = get_total_circuit_in_iter(strIterFolder, nIter)
@@ -1890,7 +1898,7 @@ if __name__ == '__main__':
                         print("Cannot replace more subckts! Only %d subckt(s) could be used in iter%d!" % (nActReplace,nIter))
                         break
 
-        else:
+        elif(None != args.i):
             for nReplacement in listReplacement:
                 uef = ufm_experiment_flow(strDataRoot, strRecordFile, strRTL_LUTRoot)
                 # nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack)
@@ -1898,6 +1906,16 @@ if __name__ == '__main__':
                 if(nActReplace < nReplacement):
                     print("Cannot replace more subckts! Only %d subckt(s) could be used in iter%d!" % (nActReplace,nIter))
                     break
+        
+        elif(None != args.li):
+            for nIter in listIter:
+                for nReplacement in listReplacement:
+                    uef = ufm_experiment_flow(strDataRoot, strRecordFile, strRTL_LUTRoot)
+                    # nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack)
+                    nSATtimeoutStatus, nActReplace, listFinish = run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, nTimeoutLimit, nTotalCircuitNum, listFinish, strDefaultArea, nPerformSATAttack, bSeq)
+                    if(nActReplace < nReplacement):
+                        print("Cannot replace more subckts! Only %d subckt(s) could be used in iter%d!" % (nActReplace,nIter))
+                        break
 
     #==============================find closer to 24hrs======================
     elif(2 == nRunMode):
