@@ -625,7 +625,8 @@ class ufm_experiment_flow:
             else:
                 print("listSubcktRedactTotal and dictRedact are not match!")
             
-        with open(os.path.join(self.strIntermediatePath, 'plx_top_obf.v'), 'w') as tof:
+        strPlxTopObf = os.path.join(self.strIntermediatePath, 'plx_top_obf.v')
+        with open(strPlxTopObf, 'w') as tof:
             for line in lines:
                 if('module top(' in line):
                     line = 'module top_obf(' + line[line.find('(')+len('('):line.rfind(');')] + ', keyinput);\n'
@@ -721,7 +722,7 @@ class ufm_experiment_flow:
         
         # self.dictSubCktRecordTotal[strKey] = self.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
 
-        return strKey, self.dictConflictSubCktRecord[strKey], listRegularSubcktRedact, nTotalGates, redactSubcktInfoFile
+        return strKey, self.dictConflictSubCktRecord[strKey], listRegularSubcktRedact, nTotalGates, redactSubcktInfoFile, strTopFile, strPlxTopObf
 
     def return_lut_file_and_redaction_string(self, subckt_file, keybitstart):
         strModuleName, dictPortsInfo = self._get_ports_info_from_v(subckt_file)
@@ -1331,6 +1332,70 @@ class ufm_experiment_flow:
                 strModuleName = strModuleName[strModuleName.find('intermediate_files_') + len('intermediate_files_'):]
 
         strNewOriVModule = strModuleName + '_i' + str(nIter) + '_r' + str(nReplacement)
+        strNewObfVModule = strNewOriVModule + '_obf'
+        strNewOriVName = strNewOriVModule + '.v'
+        strNewObfVName = strNewObfVModule + '.v'
+        strNewOriVerilog = os.path.join(strFolder, strNewOriVName)
+        strNewObfVerilog = os.path.join(strFolder, strNewObfVName)
+
+        with open(ori_v, 'r') as ovf:
+            lines = ovf.readlines()
+        for i in range(len(lines)):
+            if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", lines[i])):
+                strTemp = lines[i][lines[i].find('module')+len('module'):]
+                strTemp = strTemp.strip()
+                strTemp = strTemp[:strTemp.find('(')]
+                strTemp = strTemp.strip()
+                lines[i] = lines[i].replace(strTemp, strNewOriVModule)
+                break
+        with open(strNewOriVerilog, 'w') as novf:
+            for line in lines:
+                novf.write(line)
+        
+
+        with open(obf_v, 'r') as obvf:
+            lines = obvf.readlines()
+        for i in range(len(lines)):
+            if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", lines[i])):
+                strTemp = lines[i][lines[i].find('module')+len('module'):]
+                strTemp = strTemp.strip()
+                strTemp = strTemp[:strTemp.find('(')]
+                strTemp = strTemp.strip()
+                lines[i] = lines[i].replace(strTemp, strNewObfVModule)
+                break
+        with open(strNewObfVerilog, 'w') as nobvf:
+            for line in lines:
+                nobvf.write(line)
+
+        
+
+        return strNewOriVerilog, strNewObfVerilog
+    
+    def rename_verilog_for_RANE_attack_ckt_level(self, ori_v, obf_v, nIter, nReplacement):
+        strNewOriVerilog = ""
+        strNewObfVerilog = ""
+        strFolder = os.path.split(obf_v)[0]
+        # [\w\d]*/iter[\d]+/replace_[\d]+
+        # pattern = re.compile(r'[\w\d]*\/iter[\d]+\/replace_[\d]+')
+        # # str = u''
+        # res = pattern.search(strFolder)
+        # if(res != None):
+        #     strTemp = re.search(r"\_[\d]+\/", res)
+        #     strModuleName = res[:res.find(strTemp)]
+        #     strModuleName = strModuleName[strModuleName.rfind('_') + len('_'):]
+        if(re.search(r"[\w\d]*\/iter[\d]+\/replace\_[\d]+", strFolder)):
+            strLine = strFolder
+            x = re.findall(r"[\w\d]*\/iter[\d]+\/replace_[\d]+", strLine)       
+            for j in x:
+                # strTemp = re.findall(r"\_[\d]+\/", j)[0]
+                # strModuleName = j[:j.find(strTemp)]
+                # strModuleName = strModuleName[strModuleName.rfind('_') + len('_'):]
+                strTemp = re.findall(r"\_[\d]+\/", j)[0]
+                strTemp = strTemp.replace('/', '')
+                strModuleName = j[:j.find(strTemp) + len(strTemp)]
+                strModuleName = strModuleName[strModuleName.find('intermediate_files_') + len('intermediate_files_'):]
+
+        strNewOriVModule = strModuleName + '_i' + str(nIter) + '_r' + str(nReplacement)+'_cktlevel'
         strNewObfVModule = strNewOriVModule + '_obf'
         strNewOriVName = strNewOriVModule + '.v'
         strNewObfVName = strNewObfVModule + '.v'
@@ -2123,7 +2188,7 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         while(1):
             nReplaceRegularSubckt = nReplacement - nReplacementConflictSubckts
             # strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates, strRedactSubcktInfoFile = uef.modify_top_plx_by_conflict_order(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
-            strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates, strRedactSubcktInfoFile = uef.modify_top_obf_by_conflict_order_in_python(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
+            strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates, strRedactSubcktInfoFile, strTopFile, strPlxTopObf = uef.modify_top_obf_by_conflict_order_in_python(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
             listReplace = listReplaceConflictSubckt+listRegularSubcktRedact
             nActReplace = len(listReplace)
             dictTemp[strKey] = listReplace
@@ -2268,6 +2333,7 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
             listBenchFile.append(benchfile)
 
         strRenamedOriVerilog, strRenamedObfVerilog = uef.rename_verilog_for_RANE_attack(strOriginalVerilogFile, strObfVerilogFile, nIter, nReplacement)
+        strRenamedOriVerilog_cktlevel, strRenamedObfVerilog_cktlevel = uef.rename_verilog_for_RANE_attack_ckt_level(strTopFile, strPlxTopObf, nIter, nReplacement)
         # replace_slash_and_back_slash(strRenamedOriVerilog, str_back_slash='_bs_', str_slash='_s_')
         # replace_slash_and_back_slash(strRenamedObfVerilog, str_back_slash='_bs_', str_slash='_s_')
 
