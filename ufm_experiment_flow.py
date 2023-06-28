@@ -26,6 +26,7 @@ class ufm_experiment_flow:
         self.path_template_get_bench_tcl = os.path.join(self.workdir, 'get_bench.tcl')
         self.subckt_list_file_name = '_recommend_sub_ckt.txt'
         # self.subckt_list_file_name = '_conflict_subckt.txt'
+        self.subckt_file_name_suffix = '_minname'
         self.strDataRoot = strDataRoot
         self.strScriptsRoot = os.path.split(self.strDataRoot)[0]
         self.strDataRootName = os.path.split(self.strDataRoot)[1]
@@ -399,6 +400,391 @@ class ufm_experiment_flow:
         # self.dictSubCktRecordTotal[strKey] = self.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
 
         return strKey, self.dictConflictSubCktRecord[strKey], listRegularSubcktRedact, nTotalGates, redactSubcktInfoFile
+    
+
+    def modify_top_obf_by_conflict_order_in_python(self, strIterNum, intReplacement, listDeleteSubckt = [], nReplaceRegularSubckt = 0):
+        strIterOrderFile = os.path.join(self.strDataRoot, 'sub_circuit')
+        strIterOrderFile = os.path.join(strIterOrderFile, 'iter'+strIterNum)
+        strIterOrderFileFolder = strIterOrderFile
+        # strIterOrderFile = os.path.join(strIterOrderFile, '_conflict_subckt.txt')
+        strIterOrderFile = os.path.join(strIterOrderFile, self.subckt_list_file_name)
+
+
+        with open(strIterOrderFile, 'r') as iof:
+            strOrder = iof.readline()
+        strOrder = strOrder.replace('[','')
+        strOrder = strOrder.replace(']','')
+        strOrder = strOrder.strip('\n')
+        listOriginalOrder = strOrder.split(',')
+        while('' in listOriginalOrder):
+            listOriginalOrder.remove('')
+        listReplaceCircuits = []
+
+
+
+        strIterInfoFile = os.path.join(self.strDataRoot, 'sub_circuit')
+        strIterInfoFile = os.path.join(strIterInfoFile, 'iter'+strIterNum)
+        strIterInfoFile = os.path.join(strIterInfoFile, '_iter'+strIterNum+'_info.txt')
+        with open(strIterInfoFile, 'r') as iif:
+            subcktinfo = iif.readlines()
+
+        while('#' == subcktinfo[0][0]):
+            subcktinfo.pop(0)
+        # del(subcktinfo[0])
+        # del(subcktinfo[0])
+
+        if('_recommend_sub_ckt.txt' in strIterOrderFile):
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=1)
+        elif('_conflict_subckt.txt' in strIterOrderFile):
+            listOrder = self.resort_conflict_subckt(listConflictSubCkt=listOriginalOrder, listSubcktInfo=subcktinfo, nSortMode=0)
+
+        listReplaceOrder = []
+        strKey = 'iter'+strIterNum+'_replace'+str(intReplacement)
+        self.dictConflictSubCktRecord[strKey] = []
+        # self.dictSubCktRecordTotal[strKey] = []
+        i = 0
+        for i in range(len(listOrder)):
+        # for i in range(intReplacement):
+            strTemp = listOrder[i].strip()
+            if(strTemp in self.listDeleteSubckt):
+                continue
+            for item in subcktinfo:
+                strTemp1 = item[:item.find('\t')+len('\t')]
+                strTemp1 = strTemp1.replace('\t','')
+                strTemp1 = strTemp1.strip()
+                if(strTemp == strTemp1):
+                    if((self.IO_location - 1) <= item.count('\t')):
+                        temp = item
+                        # while(1 < temp.count('\t')):
+                        for tabsigncount in range(self.IO_location - 1):
+                            temp = temp[temp.find('\t')+len('\t'):]
+                        indices = [ind for ind, c in enumerate(temp) if c == '\t']
+                        if(1 < len(indices)):
+                            endindex = indices[1]
+                        else:
+                            endindex = len(temp)
+                        temp = temp.strip('\n')
+                        strInput = temp[:temp.find('\t')]
+                        strOutput = temp[temp.find('\t')+len('\t'):endindex]
+                        if(strInput != '0' and strOutput != '0'):
+                            listReplaceOrder.append(item)
+                            break
+                        else:
+                            if(strTemp1 not in self.listDeleteSubckt):
+                                self.listDeleteSubckt.append(strTemp1)
+                    else:
+                        if(strTemp1 not in self.listDeleteSubckt):
+                            self.listDeleteSubckt.append(strTemp1)
+            if(intReplacement <= len(listReplaceOrder)):
+                break
+        
+        while(len(listReplaceOrder) > intReplacement):
+            listReplaceOrder.pop(-1)
+
+        with open(self.path_template_modify_top_plx, 'r') as fmtplx:
+            lines = fmtplx.readlines()
+        
+        listTemp = []
+        strRedact = "  "
+        nTotalGates = 0
+        strRedactSubcktInfo = ""
+        dictRedact = {}
+        for i in range(intReplacement):
+            if(i >= len(listReplaceOrder)):
+                break
+            temp = listReplaceOrder[i]
+            if((self.IO_location - 1) > temp.count('\t')):# no io info
+                continue
+            else:
+                strCktName = temp[:temp.find('\t')]
+                if(strCktName not in dictRedact.keys()):
+                    dictRedact[strCktName] = []
+                strRedact = strRedact + temp[:temp.find('\t')]
+                self.dictConflictSubCktRecord[strKey].append(temp[:temp.find('\t')])
+                nTimes = 0
+                # while(1 < temp.count('\t')):
+                for tabsigncount in range(self.IO_location - 1):
+                    if(0 == nTimes):
+                        strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + ', '
+                    temp = temp[temp.find('\t')+len('\t'):]
+                    if(0 == nTimes):
+                        strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + '\n'
+                        nTotalGates = nTotalGates + int(temp[:temp.find('\t')])
+                    nTimes = nTimes + 1
+                indices = [ind for ind, c in enumerate(temp) if c == '\t']
+                if(1 < len(indices)):
+                    endindex = indices[1]
+                else:
+                    endindex = len(temp)
+                temp = temp[:endindex]
+                temp = temp.replace('\n','')
+                temp = temp.replace('\t',' ')
+                strLutFileName = 'lut_' + temp + '.v'
+                strLutFileName = strLutFileName.replace(' ','_')
+                # if(strLutFileName not in self.listLUTFiles):
+                #     self.listLUTFiles.append(strLutFileName)
+                #     listTemp.append(temp)
+                strRedact = strRedact + "  => '" + temp + "'"
+                strRedact = strRedact + ',\n  '
+
+        listRegularSubcktRedact = []
+        listRegularSubcktRedactInfo = []
+        nSubcktinfoLens = len(subcktinfo)-1
+        nCount = 0
+        nReplaceRegularSubckt = intReplacement - len(listReplaceOrder)
+        if('_conflict_subckt.txt' in strIterOrderFile):
+            for i in range(nSubcktinfoLens, -1, -1):
+                if(len(listRegularSubcktRedact) >= nReplaceRegularSubckt):
+                    break
+                elif(subcktinfo[i] in listReplaceOrder):
+                    continue
+                else:
+                    temp = subcktinfo[i]
+                    if((self.IO_location - 1) > temp.count('\t')):
+                        continue
+                    strTemp = temp
+                    strTemp1 = strTemp[:strTemp.find('\t')]
+                    if(strTemp1 in self.listDeleteSubckt):
+                        continue
+                    # while(1 < strTemp.count('\t')):
+                    for tabsigncount in range(self.IO_location - 1):
+                        strTemp = strTemp[strTemp.find('\t')+len('\t'):]
+                    indices = [ind for ind, c in enumerate(strTemp) if c == '\t']
+                    if(1 < len(indices)):
+                        endindex = indices[1]
+                    else:
+                        endindex = len(strTemp)
+                    strTemp = strTemp.strip('\n')
+                    strInput = strTemp[:strTemp.find('\t')]
+                    strOutput = strTemp[strTemp.find('\t')+len('\t'):endindex]
+                    if(strInput == '0' or strOutput == '0'):
+                        if(strTemp1 not in self.listDeleteSubckt):
+                            self.listDeleteSubckt.append(strTemp1)
+                            continue
+
+                    listRegularSubcktRedactInfo.append(temp)
+                    listRegularSubcktRedact.append(temp[:temp.find('\t')])
+                    # self.dictConflictSubCktRecord[strKey].append(temp[:temp.find('\t')])
+                    strCktName = temp[:temp.find('\t')]
+                    if(strCktName not in dictRedact.keys()):
+                        dictRedact[strCktName] = []
+                    strRedact = strRedact + temp[:temp.find('\t')]
+                    nTimes = 0
+                    # while(1 < temp.count('\t')):
+                    for tabsigncount in range(self.IO_location - 1):
+                        if(0 == nTimes):
+                            strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + ', '
+                        temp = temp[temp.find('\t')+len('\t'):]
+                        if(0 == nTimes):
+                            strRedactSubcktInfo = strRedactSubcktInfo + temp[:temp.find('\t')] + '\n'
+                            nTotalGates = nTotalGates + int(temp[:temp.find('\t')])
+                        nTimes = nTimes + 1
+                    indices = [ind for ind, c in enumerate(temp) if c == '\t']
+                    if(1 < len(indices)):
+                        endindex = indices[1]
+                    else:
+                        endindex = len(temp)
+                    temp = temp[:endindex]
+                    temp = temp.replace('\n','')
+                    temp = temp.replace('\t',' ')
+                    strLutFileName = 'lut_' + temp + '.v'
+                    strLutFileName = strLutFileName.replace(' ','_')
+                    # if(strLutFileName not in self.listLUTFiles):
+                    #     self.listLUTFiles.append(strLutFileName)
+                    #     listTemp.append(temp)
+                    strRedact = strRedact + "  => '" + temp + "'"
+                    strRedact = strRedact + ',\n  '
+                    nCount = nCount + 1
+        strTopFile = os.path.join(strIterOrderFileFolder, 'top.v')
+        with open(strTopFile, 'r') as tf:
+            lines = tf.readlines()
+
+        listSubcktRedactTotal = listReplaceOrder + listRegularSubcktRedactInfo
+
+        keybitStart = 0
+        keybitEnd = 0
+        for subcktName in dictRedact.keys():
+            strCktFile = os.path.abspath(os.path.join(strIterOrderFileFolder, subcktName+'/'+subcktName+self.subckt_file_name_suffix+'.v'))
+            listInstandLut = self.return_lut_file_and_redaction_string(strCktFile, keybitStart)
+            keybitStart = listInstandLut[3][0] + 1
+            keybitEnd = listInstandLut[3][0]
+            dictRedact[subcktName] = listInstandLut
+            if(listInstandLut[1]+'.v' not in self.listLUTFiles):
+                self.listLUTFiles.append(listInstandLut[1])
+                listTemp.append(listInstandLut[2])
+            for i in range(len(lines)):
+                if(subcktName + 'inst_' + subcktName + '(.' in lines[i].replace(' ','')):
+                    lines[i] = listInstandLut[0]
+                    break
+
+        for i in range(len(listSubcktRedactTotal)):
+            indices = [ind for ind, c in enumerate(listSubcktRedactTotal[i]) if c == '\t']
+            subcktName = listSubcktRedactTotal[i][:indices[0]]
+            if(subcktName in dictRedact.keys()):
+                listSubcktRedactTotal[i] = listSubcktRedactTotal[i][:indices[self.IO_location - 1 - 1]] + '\t' + dictRedact[subcktName][2].replace(' ', '\t') + listSubcktRedactTotal[i][indices[self.IO_location - 1 + 1]:]
+            else:
+                print("listSubcktRedactTotal and dictRedact are not match!")
+            
+        with open(os.path.join(self.strIntermediatePath, 'plx_top_obf.v'), 'w') as tof:
+            for line in lines:
+                if('module top(' in line):
+                    line = 'module top_obf(' + line[line.find('(')+len('('):line.rfind(');')] + ', keyinput);\n'
+                elif('endmodule' in line):
+                    line = 'input [' + str(keybitEnd) + ':0] keyinput;\n' + line
+                tof.write(line)
+
+        for item in listTemp:
+            in_width = int(item[:item.find(' ')])
+            out_width = int(item[item.find(' ')+len(' '):])
+            # self.lut_gen1(in_width, out_width)
+            # self.lut_mux_gen2(in_width, out_width)
+            # self.lut_mux_gen3(in_width, out_width)
+            self.lut_mux_gen4(in_width, out_width)
+        
+        # if(',\n  ' == strRedact[-4:]):
+        #     strRedact = strRedact[:-4]
+
+        # for i in range(len(lines)):
+        #     if('ITERNUM' in lines[i]):
+        #         lines[i] = lines[i].replace('ITERNUM', strIterNum)
+
+        #     if('STRCIRCUITDATAFOLDER' in lines[i]):
+        #         lines[i] = lines[i].replace('STRCIRCUITDATAFOLDER', self.strDataRoot)
+
+        #     if('STRSUBCKTANDINPUTOUTPUT' in lines[i]):
+        #         lines[i] = lines[i].replace('STRSUBCKTANDINPUTOUTPUT', strRedact)
+
+        #     if('REPLACEMENTNUM' in lines[i]):
+        #         lines[i] = lines[i].replace('REPLACEMENTNUM', str(intReplacement))
+
+        #     if('RTLLUTROOT' in lines[i]):
+        #         lines[i] = lines[i].replace('RTLLUTROOT', self.strRTL_LUTRoot)
+
+        #     if('INTERMEDIATEFOLDERPATH' in lines[i]):
+        #         lines[i] = lines[i].replace('INTERMEDIATEFOLDERPATH', self.strIntermediatePath)
+
+            
+
+        # newScriptFile = os.path.join(self.strIntermediatePath, 'modify_top.plx')
+        # with open(newScriptFile, 'w') as nfmicsh:
+        #     for line in lines:
+        #         nfmicsh.write(line)
+
+        redactSubcktInfoFile = os.path.join(self.strIntermediatePath, 'RedactSubcktsInfo.txt')
+        strRedactSubcktInfo = strRedactSubcktInfo + 'Total Gates: ' + str(nTotalGates) + '\n'
+        with open(redactSubcktInfoFile, 'w') as rsif:
+            rsif.write(strRedactSubcktInfo)
+        
+        
+        # print("Modify plx file finish.")
+
+        # os.chdir(self.strIntermediatePath)
+        # strCmd = "perl " + newScriptFile
+        # status = os.system(strCmd)
+        # # shell = 'modify_iters.csh'
+        # # f = open(shell, 'r')
+        # # cmd = f.read()
+        # # status = subprocess.call(cmd, shell=True, executable='/bin/bash')
+        # if(0 == status):
+        #     print("Generate read_obf_%s.tcl finish." % strIterNum)
+        # else:
+        #     print("===ERROR: Cannot generate read_obf_%s.tcl!===" % strIterNum)
+        
+        originaltcl = os.path.join(self.strIntermediatePath, 'read_'+strIterNum+'.tcl')      
+        ori_read_obf_file = os.path.join(self.strIntermediatePath, 'read_obf_'+strIterNum+'.tcl')
+        shutil.copyfile(originaltcl, ori_read_obf_file)
+        # os.rename(ori_read_obf_file, os.path.join(self.strIntermediatePath, 'read_obf_'+strIterNum+'_by_plx.tcl'))
+        self.rewrite_read_obf_tcl(self.strIntermediatePath, originaltcl, listSubcktRedactTotal, strIterNum, self.strRTL_LUTRoot)
+
+        os.chdir(self.workdir)
+        print(strKey + ': Conflict subckts: ' + str(len(self.dictConflictSubCktRecord[strKey])) + str(self.dictConflictSubCktRecord[strKey]))
+        print(strKey + ': Regular subckts: ' + str(len(listRegularSubcktRedact)) + str(listRegularSubcktRedact))
+        
+        strConflictSubcktRecord = os.path.join(self.strIntermediatePath, 'conflict_subckt_iter'+strIterNum+'_replace'+str(intReplacement)+'.txt')
+        with open(strConflictSubcktRecord, 'w') as cscrf:
+            cscrf.write(str(self.dictConflictSubCktRecord[strKey]))
+            cscrf.write(str(listRegularSubcktRedact))
+        
+        
+        if(0 != len(self.listDeleteSubckt)):
+            if(len(self.listDeleteSubckt) != self.nLenDeleteSubcktLastTime):
+                with open(self.strInvalidConflictSubcktFile, 'a') as sdcscf:
+                    sdcscf.write(str(self.listDeleteSubckt)+'\n')
+                self.nLenDeleteSubcktLastTime = len(self.listDeleteSubckt)
+                self.kickone = 1
+
+                strIterInfoFileRoot = os.path.join(self.strDataRoot, 'sub_circuit')
+                strIterInfoFileRoot = os.path.join(strIterInfoFileRoot, 'iter'+strIterNum)
+                strInvalidSubckRecordRoot = os.path.split(self.strInvalidConflictSubcktFile)[0]
+                # ufm_delete_invalid_conflict_subckt.delete_invalid_conflict_subckts(strIterInfoFileRoot, strInvalidSubckRecordRoot)
+                ufm_delete_invalid_conflict_subckt.delete_invalid_subckts(self.subckt_list_file_name, strIterInfoFileRoot, strInvalidSubckRecordRoot)
+        
+        # self.dictSubCktRecordTotal[strKey] = self.dictConflictSubCktRecord[strKey] + listRegularSubcktRedact
+
+        return strKey, self.dictConflictSubCktRecord[strKey], listRegularSubcktRedact, nTotalGates, redactSubcktInfoFile
+
+    def return_lut_file_and_redaction_string(self, subckt_file, keybitstart):
+        strModuleName, dictPortsInfo = self._get_ports_info_from_v(subckt_file)
+        with open(subckt_file, 'r') as sf:
+            lines = sf.readlines()
+
+        for key in dictPortsInfo.keys():
+            dictPortsInfo[key].append(0) #0-don't need, 1-need
+
+        nInCount = 0
+        nOutCount = 0
+        for line in lines:
+            if('module ' + strModuleName in line):
+                continue
+            if('input ' in line or 'output ' in line):
+                continue
+            bStop = True
+            for key in dictPortsInfo.keys():
+                if(0 == dictPortsInfo[key][1]):
+                    bStop = False
+                    break
+            if(True == bStop):
+                break
+            for key in dictPortsInfo.keys():
+                if(0 == dictPortsInfo[key][1]):
+                    if(key in line):
+                        dictPortsInfo[key][1] = 1
+                        if(0 == dictPortsInfo[key][0][0]):
+                            nInCount = nInCount + 1
+                        elif(1 == dictPortsInfo[key][0][0]):
+                            nOutCount = nOutCount + 1
+        
+        nKeyMax = (2**nInCount) * nOutCount + keybitstart - 1
+        strLut = 'lut_' + str(nInCount) + '_' + str(nOutCount)
+        strIOCount = str(nInCount) + ' ' + str(nOutCount)
+        strInstLine = strLut + ' ' + 'inst_' + strModuleName + '('
+        strTemp = ''
+        nInTemp = 0
+        nOutTemp = 0
+        for key in dictPortsInfo.keys():
+            if(1 == dictPortsInfo[key][1]):
+                strPortName = key.replace('i_cg_', '')
+                listtemp = re.findall(r'q\d+p',strPortName)
+                if(0 != len(listtemp)):
+                    substr = listtemp[0]
+                    strtemp = substr
+                    strtemp = strtemp.replace('q','[')
+                    strtemp = strtemp.replace('p',']')
+                    strPortName = strPortName.replace(substr,strtemp)
+                if(0 == dictPortsInfo[key][0][0]):
+                    strTemp = strTemp + '.in' + str(nInTemp) + '(' + strPortName + '), '
+                    nInTemp = nInTemp + 1
+                elif(1 == dictPortsInfo[key][0][0]):
+                    strTemp = strTemp + '.out' + str(nOutTemp) + '(' + strPortName + '), '
+                    nOutTemp = nOutTemp + 1
+        strTemp = strTemp + '.prog_key(keyinput[' + str(nKeyMax) + ':' + str(keybitstart) + ']), '
+        if(', ' == strTemp[-2:]):
+            strTemp = strTemp[:-2]
+        strInstLine = strInstLine + strTemp + ');\n'
+
+        listInstandLut = [strInstLine, strLut, strIOCount, [nKeyMax, keybitstart]]
+        return listInstandLut
+
 
     def rewrite_read_obf_tcl(self, folder, originaltcl, listRedact, strIterNum, LUTFolder):
         filename = os.path.join(folder, 'read_obf_'+strIterNum+'.tcl')
@@ -1036,13 +1422,76 @@ class ufm_experiment_flow:
 
         return status, strOutputFile, strOriginalVerilogFile
         
-    def get_ports_info_from_v(self, v_file):
+    # def get_ports_info_from_v(self, v_file):
+    #     with open(v_file,'r') as scv:
+    #         parsed_f = (scv.read()).split(";")
+        
+    #     dictPorts = {}
+    #     for i in range(len(parsed_f)):
+    #         parsed_f[i] += ";"
+    #         # if(re.search(r"module[\s]+[\w\d\S]*\([\w\d\s,]*\);", parsed_f[i])):
+    #         if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", parsed_f[i])):
+    #             strTemp = parsed_f[i][parsed_f[i].find('module')+len('module'):]
+    #             strTemp = strTemp.strip()
+    #             strModuleName = strTemp[:strTemp.find('(')]
+    #             strModuleName = strModuleName.strip()
+    #             continue
+    #         #####################################
+    #         # Match Input
+    #         #####################################
+    #         # elif(re.match(r"^([\n\s(\\n)]*)input\s+([\[\]\/\\\w\d\s,]+);$", parsed_f[i])):
+    #         elif(re.match(r"([\n\s(\\n)]*)input\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+    #             strLine = parsed_f[i]
+    #             strLine = strLine[strLine.find('input')+len('input'):]
+    #             # x = re.findall(r"[\w\d\[\]]+[,;]", strLine)
+    #             # x = re.findall(r"[\w/\\]*[\w\d\[\]\s]+[,;]", strLine)
+    #             x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)       
+    #             for j in x:
+    #                 tempListPortInfo = [] #[str_name, min_bit, max_bit, int_type] #type:0:input,1:output,2:reg,3:wire
+    #                 j = re.sub(r",|;", "", j)
+    #                 j = j.strip()
+    #                 if(j in dictPorts.keys()):
+    #                     dictPorts[j][0].append(0)
+    #                 else:
+    #                     dictPorts[j] = [[0]]
+
+    #         #####################################
+    #         # Match Output
+    #         # Qeustion: Is it possible that some outputs are in the form of bus?
+    #         #####################################
+    #         # elif(re.match(r"^([\n\s(\\n)]*)output\s+([\[\]\/\\\w\d\s,]+);$", parsed_f[i])):
+    #         elif(re.match(r"([\n\s(\\n)]*)output\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+    #             strLine = parsed_f[i]
+    #             strLine = strLine[strLine.find('output')+len('output'):]
+    #             # x = re.findall(r"[\w/\\]*[\w\d\[\]\s]+[,;]", strLine)
+    #             x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)
+    #             for j in x:
+    #                 tempListPortInfo = [] #[str_name, min_bit, max_bit, int_type] #type:0:input,1:output,2:reg,3:wire
+    #                 j = re.sub(r",|;", "", j)
+    #                 j = j.strip()
+    #                 if(j in dictPorts.keys()):
+    #                     dictPorts[j][0].append(1)
+    #                 else:
+    #                     dictPorts[j] = [[1]]
+        
+    #     return strModuleName, dictPorts
+
+    def _get_ports_info_from_v(self, v_file):
         with open(v_file,'r') as scv:
             parsed_f = (scv.read()).split(";")
         
         dictPorts = {}
+        strModuleName = ''
         for i in range(len(parsed_f)):
             parsed_f[i] += ";"
+            nMaxWidth = 0
+            nMinBit = 0
+            nMaxBit = 0
+            nLeftWidth = 0
+            nRightWidth = 0
+            #####################################
+            # Match module
+            #####################################
             # if(re.search(r"module[\s]+[\w\d\S]*\([\w\d\s,]*\);", parsed_f[i])):
             if(re.search(r"([\n\s(\\n)]*)module\s+.+\(", parsed_f[i])):
                 strTemp = parsed_f[i][parsed_f[i].find('module')+len('module'):]
@@ -1051,23 +1500,60 @@ class ufm_experiment_flow:
                 strModuleName = strModuleName.strip()
                 continue
             #####################################
-            # Match Input
+            # Match Input signal1,signal2;
             #####################################
-            # elif(re.match(r"^([\n\s(\\n)]*)input\s+([\[\]\/\\\w\d\s,]+);$", parsed_f[i])):
             elif(re.match(r"([\n\s(\\n)]*)input\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
                 strLine = parsed_f[i]
                 strLine = strLine[strLine.find('input')+len('input'):]
-                # x = re.findall(r"[\w\d\[\]]+[,;]", strLine)
-                # x = re.findall(r"[\w/\\]*[\w\d\[\]\s]+[,;]", strLine)
                 x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)       
                 for j in x:
-                    tempListPortInfo = [] #[str_name, min_bit, max_bit, int_type] #type:0:input,1:output,2:reg,3:wire
+                    tempListPortInfo = [0,0,0] #[int_type, min_bit, max_bit] #type:0:input,1:output,2:inout
                     j = re.sub(r",|;", "", j)
                     j = j.strip()
                     if(j in dictPorts.keys()):
-                        dictPorts[j][0].append(0)
+                        if(0 != dictPorts[j][0][0]):
+                            dictPorts[j][0][0] = 2
+                        if(nMinBit < dictPorts[j][0][1]):
+                            dictPorts[j][0][1] = nMinBit
+                        if(nMaxBit > dictPorts[j][0][2]):
+                            dictPorts[j][0][2] = nMaxBit        
                     else:
-                        dictPorts[j] = [[0]]
+                        dictPorts[j] = [tempListPortInfo]
+
+            #####################################
+            # Match Input [n1:n2] signal1,signal2;
+            #####################################
+            elif(re.match(r"([\n\s(\\n)]*)input\s+\[[\d]+:[\d]+\]\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+                strLine = parsed_f[i]
+                strLine = strLine[strLine.find('input')+len('input'):]
+
+                strWidth = strLine[strLine.find('['):strLine.find(']')]
+                strWidth = strWidth.replace('[','')
+                strWidth = strWidth.replace(']','')
+                nLeftWidth = int(strWidth[:strWidth.find(':')])
+                nRightWidth = int(strWidth[strWidth.find(':') + len(':'):])
+                if(nLeftWidth > nRightWidth):
+                    nMaxBit = nLeftWidth
+                    nMinBit = nRightWidth
+                else:
+                    nMaxBit = nRightWidth
+                    nMinBit = nLeftWidth
+                strLine = strLine[strLine.find(']') + len(']'):]
+
+                x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)       
+                for j in x:
+                    tempListPortInfo = [0, nMinBit, nMaxBit] #[int_type, min_bit, max_bit] #type:0:input,1:output,2:inout
+                    j = re.sub(r",|;", "", j)
+                    j = j.strip()
+                    if(j in dictPorts.keys()):
+                        if(0 != dictPorts[j][0][0]):
+                            dictPorts[j][0][0] = 2
+                        if(nMinBit < dictPorts[j][0][1]):
+                            dictPorts[j][0][1] = nMinBit
+                        if(nMaxBit > dictPorts[j][0][2]):
+                            dictPorts[j][0][2] = nMaxBit        
+                    else:
+                        dictPorts[j] = [tempListPortInfo]
 
             #####################################
             # Match Output
@@ -1080,14 +1566,115 @@ class ufm_experiment_flow:
                 # x = re.findall(r"[\w/\\]*[\w\d\[\]\s]+[,;]", strLine)
                 x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)
                 for j in x:
-                    tempListPortInfo = [] #[str_name, min_bit, max_bit, int_type] #type:0:input,1:output,2:reg,3:wire
+                    tempListPortInfo = [1,0,0] #[int_type, min_bit, max_bit] #type:0:input,1:output,2:inout
                     j = re.sub(r",|;", "", j)
                     j = j.strip()
                     if(j in dictPorts.keys()):
-                        dictPorts[j][0].append(1)
+                        if(1 != dictPorts[j][0][0]):
+                            dictPorts[j][0][0] = 2
+                        if(nMinBit < dictPorts[j][0][1]):
+                            dictPorts[j][0][1] = nMinBit
+                        if(nMaxBit > dictPorts[j][0][2]):
+                            dictPorts[j][0][2] = nMaxBit        
                     else:
-                        dictPorts[j] = [[1]]
+                        dictPorts[j] = [tempListPortInfo]
+            
+            #####################################
+            # Match Output [n1:n2] signal1,signal2;
+            #####################################
+            # elif(re.match(r"^([\n\s(\\n)]*)input\s+([\[\]\/\\\w\d\s,]+);$", parsed_f[i])):
+            elif(re.match(r"([\n\s(\\n)]*)output\s+\[[\d]+:[\d]+\]\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+                strLine = parsed_f[i]
+                strLine = strLine[strLine.find('output')+len('output'):]
+
+                strWidth = strLine[strLine.find('['):strLine.find(']')]
+                strWidth = strWidth.replace('[','')
+                strWidth = strWidth.replace(']','')
+                nLeftWidth = int(strWidth[:strWidth.find(':')])
+                nRightWidth = int(strWidth[strWidth.find(':') + len(':'):])
+                if(nLeftWidth > nRightWidth):
+                    nMaxBit = nLeftWidth
+                    nMinBit = nRightWidth
+                else:
+                    nMaxBit = nRightWidth
+                    nMinBit = nLeftWidth
+                strLine = strLine[strLine.find(']') + len(']'):]
+
+                x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)       
+                for j in x:
+                    tempListPortInfo = [1, nMinBit, nMaxBit] #[int_type, min_bit, max_bit] #type:0:input,1:output,2:inout
+                    j = re.sub(r",|;", "", j)
+                    j = j.strip()
+                    if(j in dictPorts.keys()):
+                        if(1 != dictPorts[j][0][0]):
+                            dictPorts[j][0][0] = 2
+                        if(nMinBit < dictPorts[j][0][1]):
+                            dictPorts[j][0][1] = nMinBit
+                        if(nMaxBit > dictPorts[j][0][2]):
+                            dictPorts[j][0][2] = nMaxBit        
+                    else:
+                        dictPorts[j] = [tempListPortInfo]
+            
+            #####################################
+            # Match Inout signal1,signal2;
+            #####################################
+            elif(re.match(r"([\n\s(\\n)]*)inout\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+                strLine = parsed_f[i]
+                strLine = strLine[strLine.find('inout')+len('inout'):]
+                x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)       
+                for j in x:
+                    tempListPortInfo = [2,0,0] #[int_type, min_bit, max_bit] #type:0:input,1:output,2:inout
+                    j = re.sub(r",|;", "", j)
+                    j = j.strip()
+                    if(j in dictPorts.keys()):
+                        if(2 != dictPorts[j][0][0]):
+                            dictPorts[j][0][0] = 2
+                        if(nMinBit < dictPorts[j][0][1]):
+                            dictPorts[j][0][1] = nMinBit
+                        if(nMaxBit > dictPorts[j][0][2]):
+                            dictPorts[j][0][2] = nMaxBit        
+                    else:
+                        dictPorts[j] = [tempListPortInfo]
+
+            #####################################
+            # Match Inout [n1:n2] signal1,signal2;
+            #####################################
+            elif(re.match(r"([\n\s(\\n)]*)inout\s+\[[\d]+:[\d]+\]\s+([\[\]\/\\\$\w\d\s,]+);", parsed_f[i])):
+                strLine = parsed_f[i]
+                strLine = strLine[strLine.find('inout')+len('inout'):]
+
+                strWidth = strLine[strLine.find('['):strLine.find(']')]
+                strWidth = strWidth.replace('[','')
+                strWidth = strWidth.replace(']','')
+                nLeftWidth = int(strWidth[:strWidth.find(':')])
+                nRightWidth = int(strWidth[strWidth.find(':') + len(':'):])
+                if(nLeftWidth > nRightWidth):
+                    nMaxBit = nLeftWidth
+                    nMinBit = nRightWidth
+                else:
+                    nMaxBit = nRightWidth
+                    nMinBit = nLeftWidth
+                strLine = strLine[strLine.find(']') + len(']'):]
+
+                x = re.findall(r"[\w/\\\$]*[\w\d\[\]\s]+[,;]", strLine)       
+                for j in x:
+                    tempListPortInfo = [2, nMinBit, nMaxBit] #[int_type, min_bit, max_bit] #type:0:input,1:output,2:inout
+                    j = re.sub(r",|;", "", j)
+                    j = j.strip()
+                    if(j in dictPorts.keys()):
+                        if(2 != dictPorts[j][0][0]):
+                            dictPorts[j][0][0] = 2
+                        if(nMinBit < dictPorts[j][0][1]):
+                            dictPorts[j][0][1] = nMinBit
+                        if(nMaxBit > dictPorts[j][0][2]):
+                            dictPorts[j][0][2] = nMaxBit        
+                    else:
+                        dictPorts[j] = [tempListPortInfo]
+
         
+        if('' == strModuleName):
+            strModuleName = os.path.splitext(os.path.basename(v_file))[0]
+
         return strModuleName, dictPorts
 
     def optimize_bench_file(self, original_verilog_file, benchfile):
@@ -1535,7 +2122,8 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
         dictTemp = {}
         while(1):
             nReplaceRegularSubckt = nReplacement - nReplacementConflictSubckts
-            strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates, strRedactSubcktInfoFile = uef.modify_top_plx_by_conflict_order(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
+            # strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates, strRedactSubcktInfoFile = uef.modify_top_plx_by_conflict_order(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
+            strKey, listReplaceConflictSubckt, listRegularSubcktRedact, nTotalGates, strRedactSubcktInfoFile = uef.modify_top_obf_by_conflict_order_in_python(str(nIter), nReplacement, uef.listDeleteSubckt, nReplaceRegularSubckt)
             listReplace = listReplaceConflictSubckt+listRegularSubcktRedact
             nActReplace = len(listReplace)
             dictTemp[strKey] = listReplace
@@ -1807,6 +2395,8 @@ if __name__ == '__main__':
     parser.add_argument("-lr", action="store", required=False, type=str, help="list of replace, use '-' to separate, e.g. 5-10-15")
     parser.add_argument("-maxr", action="store", required=False, type=str, help="nMaxReplacement, default 100")
     parser.add_argument("-atk", action="store", required=False, type=int, help="perform SAT attack or not")
+    # parser.add_argument("-clock", action="store", required=False, type=str, help="clock pin")
+    # parser.add_argument("-reset", action="store", required=False, type=str, help="reset pin")
     args = parser.parse_args()
     
     listReplacement = [5,10,15,20,25,30]
