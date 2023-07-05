@@ -2139,6 +2139,48 @@ class ufm_experiment_flow:
 
         return strTemp
     
+    def verilog_check_width_errors(self, strVerilog:str):
+        # especially check the 1 bit wires
+        with open(strVerilog, 'r') as vf:
+             parsed_f = (vf.read()).split(";")
+
+        
+        for i in range(len(parsed_f)):
+            parsed_f[i] += ";"
+            if('wire ' in parsed_f[i]):
+                strTemp = parsed_f[i][parsed_f[i].find('wire ')+len('wire '):]
+                strTemp = strTemp.strip()
+                if(('[' in strTemp) and (':' not in strTemp)):
+                    dictRewriteWire = {}
+                    while('[' in strTemp):
+                        nInd = strTemp.rfind(',',0,strTemp.find('['))
+                        if(-1 != nInd):
+                            strTempName = strTemp[nInd+len(','):strTemp.find(']')+1]
+                        else:
+                            strTempName = strTemp[:strTemp.find(']')+1]
+                        strTemp = strTemp[strTemp.find(']')+len(']'):]
+                        strTempName = strTempName.strip()
+                        nTempWidth = int(strTempName[strTempName.find('[')+len('['):strTempName.find(']')])
+                        strTempName = strTempName[:strTempName.find('[')]
+                        if(strTempName in dictRewriteWire.keys()):
+                            if(nTempWidth > dictRewriteWire[strTempName]):
+                                dictRewriteWire[strTempName] = nTempWidth
+                        else:
+                            dictRewriteWire[strTempName] = nTempWidth
+                    
+                    strRewriteWire = "\n"
+                    for key in dictRewriteWire.keys():
+                        strRewriteWire = strRewriteWire + '  wire   [' + str(dictRewriteWire[key]) + ':0] ' + key + ';\n'
+                    
+                    parsed_f[i] = strRewriteWire + '/*' + parsed_f[i] + '*/'
+        
+
+        with open(strVerilog, 'w') as vf:
+             for i in range(len(parsed_f)):
+                vf.write(parsed_f[i])
+        
+        return strVerilog
+    
         
 
 
@@ -2408,7 +2450,12 @@ def run_one_test(nIter, nReplacement, uef, strDataRoot, strItersRoot, SATtimeout
             listBenchFile.append(benchfile)
 
         strRenamedOriVerilog, strRenamedObfVerilog = uef.rename_verilog_for_RANE_attack(strOriginalVerilogFile, strObfVerilogFile, nIter, nReplacement)
+        strRenamedOriVerilog = uef.verilog_check_width_errors(strRenamedOriVerilog)
+        strRenamedObfVerilog = uef.verilog_check_width_errors(strRenamedObfVerilog)
+
         strRenamedOriVerilog_cktlevel, strRenamedObfVerilog_cktlevel = uef.rename_verilog_for_RANE_attack_ckt_level(strTopFile, strPlxTopObf, nIter, nReplacement)
+        strRenamedOriVerilog_cktlevel = uef.verilog_check_width_errors(strRenamedOriVerilog_cktlevel)
+        strRenamedObfVerilog_cktlevel = uef.verilog_check_width_errors(strRenamedObfVerilog_cktlevel)
         # replace_slash_and_back_slash(strRenamedOriVerilog, str_back_slash='_bs_', str_slash='_s_')
         # replace_slash_and_back_slash(strRenamedObfVerilog, str_back_slash='_bs_', str_slash='_s_')
 
