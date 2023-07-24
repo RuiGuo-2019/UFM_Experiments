@@ -768,11 +768,12 @@ class ufm_experiment_flow:
                 strPortName = key.replace('i_cg_', '')
                 listtemp = re.findall(r'q\d+p',strPortName)
                 if(0 != len(listtemp)):
-                    substr = listtemp[0]
-                    strtemp = substr
-                    strtemp = strtemp.replace('q','[')
-                    strtemp = strtemp.replace('p',']')
-                    strPortName = strPortName.replace(substr,strtemp)
+                    for substr in listtemp:
+                        # substr = listtemp[0]
+                        strtemp = substr
+                        strtemp = strtemp.replace('q','[')
+                        strtemp = strtemp.replace('p',']')
+                        strPortName = strPortName.replace(substr,strtemp)
                 if(0 == dictPortsInfo[key][0][0]):
                     strTemp = strTemp + '.in' + str(nInTemp) + '(' + strPortName + '), '
                     nInTemp = nInTemp + 1
@@ -2155,22 +2156,53 @@ class ufm_experiment_flow:
                     while('[' in strTemp):
                         nInd = strTemp.rfind(',',0,strTemp.find('['))
                         if(-1 != nInd):
-                            strTempName = strTemp[nInd+len(','):strTemp.find(']')+1]
+                            nIndEnd = strTemp.find(',',nInd+1,len(strTemp))
+                            if(-1 == nIndEnd):
+                                nIndEnd = strTemp.find(';',nInd+1,len(strTemp))
                         else:
-                            strTempName = strTemp[:strTemp.find(']')+1]
-                        strTemp = strTemp[strTemp.find(']')+len(']'):]
-                        strTempName = strTempName.strip()
-                        nTempWidth = int(strTempName[strTempName.find('[')+len('['):strTempName.find(']')])
-                        strTempName = strTempName[:strTempName.find('[')]
-                        if(strTempName in dictRewriteWire.keys()):
-                            if(nTempWidth > dictRewriteWire[strTempName]):
-                                dictRewriteWire[strTempName] = nTempWidth
+                            nIndEnd = strTemp.find(',',0,len(strTemp))
+                            if(-1 == nIndEnd):
+                                nIndEnd = strTemp.find(';',0,len(strTemp))
+                        if(-1 != nInd):
+                            strTempName = strTemp[nInd+len(','):nIndEnd]
                         else:
-                            dictRewriteWire[strTempName] = nTempWidth
+                            strTempName = strTemp[:nIndEnd]
+                        strTemp = strTemp[nIndEnd:]
+                        nDim = 1
+                        nCnt = 0
+                        nTempWidth = 0
+                        if(1 == strTempName.count('[')):
+                            nDim = 1
+                            nCnt = 0
+                            strTempName = strTempName.strip()
+                            nTempWidth = int(strTempName[strTempName.find('[')+len('['):strTempName.find(']')])
+                            strTempName = strTempName[:strTempName.find('[')]
+                            if(strTempName in dictRewriteWire.keys()):
+                                if(nTempWidth > dictRewriteWire[strTempName][2]):
+                                    dictRewriteWire[strTempName][2] = nTempWidth
+                            else:
+                                dictRewriteWire[strTempName] = [nDim, nCnt, nTempWidth]
+                        elif(2 == strTempName.count('[')):
+                            nDim = 2
+                            nCnt = 0
+                            strTempName = strTempName.strip()
+                            nCnt = int(strTempName[strTempName.find('[')+len('['):strTempName.find(']')])
+                            nTempWidth = int(strTempName[strTempName.rfind('[')+len('['):strTempName.rfind(']')])
+                            strTempName = strTempName[:strTempName.find('[')]
+                            if(strTempName in dictRewriteWire.keys()):
+                                if(nCnt > dictRewriteWire[strTempName][1]):
+                                    dictRewriteWire[strTempName][1] = nCnt
+                                if(nTempWidth > dictRewriteWire[strTempName][2]):
+                                    dictRewriteWire[strTempName][2] = nTempWidth
+                            else:
+                                dictRewriteWire[strTempName] = [nDim, nCnt, nTempWidth]
                     
                     strRewriteWire = "\n"
                     for key in dictRewriteWire.keys():
-                        strRewriteWire = strRewriteWire + '  wire   [' + str(dictRewriteWire[key]) + ':0] ' + key + ';\n'
+                        if(1 == dictRewriteWire[key][0]):
+                            strRewriteWire = strRewriteWire + '  wire   [' + str(dictRewriteWire[key][2]) + ':0] ' + key + ';\n'
+                        elif(2 == dictRewriteWire[key][0]):
+                            strRewriteWire = strRewriteWire + '  wire   [' + str(dictRewriteWire[key][2]) + ':0] ' + key + '[0:' + str(dictRewriteWire[key][1]) + '];\n'
                     
                     parsed_f[i] = strRewriteWire + '/*' + parsed_f[i] + '*/'
         
